@@ -14,7 +14,8 @@ class NavigationViewModel(
     private val destinationProvider: DestinationProvider,
     private val directionsRepository: DirectionsRepository,
     private val navigationEngine: NavigationEngine,
-    private val placesRepository: PlacesRepository
+    private val placesRepository: PlacesRepository,
+    private val onSpeak: ((String) -> Unit)? = null
 ) : ViewModel() {
 
     private val _route = MutableStateFlow<Route?>(null)
@@ -70,27 +71,17 @@ class NavigationViewModel(
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    val uiState: StateFlow<NavigationState> = combine(
-        locationProvider.locationFlow
+    val uiState: StateFlow<NavigationState> = navigationEngine.observeNavigationState(
+        locationFlow = locationProvider.locationFlow
             .map { GeoPoint(it.latitude, it.longitude, it.bearing) }
-            .onStart { emit(GeoPoint(0.0, 0.0)) }
-            .catch { e -> 
-                android.util.Log.e("NavigationViewModel", "Location flow error", e)
-                emit(GeoPoint(0.0, 0.0)) 
-            }
             .distinctUntilChanged(),
-        destinationProvider.destinationFlow,
-        _route.asStateFlow(),
-        _errorMessage.asStateFlow()
-    ) { location, destination, currentRoute, error ->
-        withContext(Dispatchers.Default) {
-            navigationEngine.calculateNavigationState(location, destination, currentRoute)
-                .copy(errorMessage = error)
-        }
+        destinationFlow = destinationProvider.destinationFlow,
+        routeFlow = _route.asStateFlow()
+    ).combine(_errorMessage.asStateFlow()) { state, error ->
+        state.copy(errorMessage = error)
     }.onEach { state: NavigationState ->
         handleNavigationEvents(state)
-    }.flowOn(Dispatchers.Default)
-    .stateIn(
+    }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = NavigationState()
@@ -99,13 +90,15 @@ class NavigationViewModel(
     private fun handleNavigationEvents(state: NavigationState) {
         // Off-route detection
         if (state.isOffRoute && state.currentLocation != null && state.destination != null && !isFetchingRoute.get()) {
+            onSpeak?.invoke("Off route. Recalculating.")
             recalculateRoute(state.currentLocation, state.destination)
         }
 
         // TTS Trigger: If instruction changed
+        // Check if instruction is significantly different or if we just moved to a new step
         if (state.currentInstruction != lastInstruction && state.currentInstruction.isNotEmpty()) {
             lastInstruction = state.currentInstruction
-            // TODO: Inject TTS engine and call speak(state.currentInstruction)
+            onSpeak?.invoke(state.currentInstruction)
         }
     }
 

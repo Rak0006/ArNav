@@ -13,7 +13,8 @@ class NavigationViewModelFactory(
     private val destinationProvider: DestinationProvider,
     private val directionsRepository: DirectionsRepository,
     private val navigationEngine: NavigationEngine,
-    private val placesRepository: PlacesRepository
+    private val placesRepository: PlacesRepository,
+    private val onSpeak: ((String) -> Unit)? = null
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(NavigationViewModel::class.java)) {
@@ -23,7 +24,8 @@ class NavigationViewModelFactory(
                 destinationProvider = destinationProvider,
                 directionsRepository = directionsRepository,
                 navigationEngine = navigationEngine,
-                placesRepository = placesRepository
+                placesRepository = placesRepository,
+                onSpeak = onSpeak
             ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")

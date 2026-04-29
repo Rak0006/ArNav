@@ -119,7 +119,7 @@ fun NavigationScreen(
                     ) {
                         InfoTile(label = "Distance", value = state.totalDistance)
                         InfoTile(label = "ETA", value = state.eta)
-                        InfoTile(label = "Remaining", value = "${(state.distanceRemaining / 1000.0).format(1)} km")
+                        InfoTile(label = "Remaining", value = state.distanceRemainingFormatted)
                     }
                 } else if (state.isArrived) {
                     Card(

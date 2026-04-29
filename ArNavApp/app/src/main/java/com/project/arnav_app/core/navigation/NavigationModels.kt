@@ -45,7 +45,20 @@ data class NavigationState(
     }
 
     val distanceRemaining: Float get() = totalDistanceRemaining
-    val totalDistance: String get() = route?.let { "${"%.1f".format(it.totalDistanceMeters / 1000.0)} km" } ?: "0 km"
+    
+    val distanceRemainingFormatted: String get() {
+        return if (totalDistanceRemaining < 1000) {
+            "${totalDistanceRemaining.toInt()} m"
+        } else {
+            "${"%.1f".format(totalDistanceRemaining / 1000.0)} km"
+        }
+    }
+
+    val totalDistance: String get() = route?.let { 
+        if (it.totalDistanceMeters < 1000) "${it.totalDistanceMeters} m"
+        else "${"%.1f".format(it.totalDistanceMeters / 1000.0)} km" 
+    } ?: "0 m"
+
     val eta: String get() = route?.let { "${it.totalDurationSeconds / 60} min" } ?: "0 min"
 
     private fun calculateDistance(a: GeoPoint, b: GeoPoint): Double {

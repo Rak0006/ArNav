@@ -3,7 +3,9 @@ package com.project.arnav_app
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.speech.tts.TextToSpeech
 import android.widget.Toast
+import java.util.Locale
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -32,10 +34,14 @@ import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 
-class MainActivity : ComponentActivity() {
+class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
+    private var tts: TextToSpeech? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        tts = TextToSpeech(this, this)
 
         // Manual DI for MVP
         val apiKey = "AIzaSyA-H9sCG0f14XtInSdBvnYjcJcY56-RTGY"
@@ -69,11 +75,14 @@ class MainActivity : ComponentActivity() {
         val navigationEngine = RealTimeNavigationEngine()
 
         val factory = NavigationViewModelFactory(
-            locationProvider,
-            destinationProvider,
-            directionsRepository,
-            navigationEngine,
-            placesRepository
+            locationProvider = locationProvider,
+            destinationProvider = destinationProvider,
+            directionsRepository = directionsRepository,
+            navigationEngine = navigationEngine,
+            placesRepository = placesRepository,
+            onSpeak = { text ->
+                tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, null)
+            }
         )
 
         setContent {
@@ -120,5 +129,17 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onInit(status: Int) {
+        if (status == TextToSpeech.SUCCESS) {
+            tts?.language = Locale.US
+        }
+    }
+
+    override fun onDestroy() {
+        tts?.stop()
+        tts?.shutdown()
+        super.onDestroy()
     }
 }
