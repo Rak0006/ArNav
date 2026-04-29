@@ -10,6 +10,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -51,10 +52,19 @@ fun NavigationScreen(
             ) {
                 val location = state.currentLocation
                 if (location != null && location.latitude != 0.0) {
+                    val destinationLatLng = remember(state.route) {
+                        state.route?.steps?.lastOrNull()?.end?.let { LatLng(it.latitude, it.longitude) }
+                    }
+                    val routeLatLngPoints = remember(state.route, state.closestPolylineIndex) {
+                        state.routePoints.map { LatLng(it.latitude, it.longitude) }
+                    }
+
                     MapView(
                         userLocation = LatLng(location.latitude, location.longitude),
-                        destination = state.destination?.let { LatLng(it.latitude, it.longitude) },
-                        routePoints = state.routePoints.map { LatLng(it.latitude, it.longitude) },
+                        userBearing = location.bearing,
+                        isNavigating = state.isNavigating,
+                        destination = destinationLatLng,
+                        routePoints = routeLatLngPoints,
                         onMapLongClick = { latLng ->
                             onStartNavigation(latLng.latitude, latLng.longitude)
                         }
@@ -109,7 +119,43 @@ fun NavigationScreen(
                     ) {
                         InfoTile(label = "Distance", value = state.totalDistance)
                         InfoTile(label = "ETA", value = state.eta)
-                        InfoTile(label = "Remaining", value = "${(state.distanceRemaining / 1000).format(1)} km")
+                        InfoTile(label = "Remaining", value = "${(state.distanceRemaining / 1000.0).format(1)} km")
+                    }
+                } else if (state.isArrived) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1976D2), contentColor = Color.White),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                modifier = Modifier.size(48.dp),
+                                tint = Color.White
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "You have arrived!",
+                                style = MaterialTheme.typography.headlineMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Your destination is nearby.",
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                            Spacer(modifier = Modifier.height(24.dp))
+                            Button(
+                                onClick = { onStartNavigation(0.0, 0.0) },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("FINISH")
+                            }
+                        }
                     }
                 } else {
                     Text(

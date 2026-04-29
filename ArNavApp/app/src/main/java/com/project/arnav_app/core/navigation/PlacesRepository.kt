@@ -27,12 +27,12 @@ class PlacesRepository(context: Context) {
 
     suspend fun searchPlaceByText(query: String): GeoPoint? {
         // Note: SearchByText requires Places API (New) to be enabled in Cloud Console
-        val placeFields = listOf(Place.Field.LOCATION)
+        val placeFields = listOf(Place.Field.LAT_LNG)
         val request = SearchByTextRequest.builder(query, placeFields).build()
         return try {
             val response: SearchByTextResponse = placesClient.searchByText(request).await()
             val firstPlace = response.places.firstOrNull()
-            firstPlace?.location?.let { GeoPoint(it.latitude, it.longitude) }
+            firstPlace?.latLng?.let { GeoPoint(it.latitude, it.longitude) }
         } catch (e: Exception) {
             Log.e("PlacesRepo", "SearchByText error: ${e.message}")
             null
@@ -40,13 +40,13 @@ class PlacesRepository(context: Context) {
     }
 
     suspend fun getPlaceCoordinates(placeId: String): GeoPoint? {
-        val placeFields = listOf(Place.Field.LOCATION)
+        val placeFields = listOf(Place.Field.LAT_LNG)
         val request = FetchPlaceRequest.newInstance(placeId, placeFields)
         return try {
             val response: FetchPlaceResponse = placesClient.fetchPlace(request).await()
-            val location = response.place.location
-            if (location != null) {
-                GeoPoint(location.latitude, location.longitude)
+            val latLng = response.place.latLng
+            if (latLng != null) {
+                GeoPoint(latLng.latitude, latLng.longitude)
             } else {
                 null
             }

@@ -13,11 +13,15 @@ import androidx.core.content.ContextCompat
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.JointType
+import com.google.android.gms.maps.model.RoundCap
 import com.google.maps.android.compose.*
 
 @Composable
 fun MapView(
     userLocation: LatLng,
+    userBearing: Float,
+    isNavigating: Boolean,
     destination: LatLng?,
     routePoints: List<LatLng> = emptyList(),
     onMapLongClick: (LatLng) -> Unit = {},
@@ -37,10 +41,23 @@ fun MapView(
         position = CameraPosition.fromLatLngZoom(userLocation, 15f)
     }
 
-    LaunchedEffect(userLocation) {
+    LaunchedEffect(userLocation, userBearing, isNavigating) {
         if (userLocation.latitude != 0.0) {
+            val cameraUpdate = if (isNavigating) {
+                CameraUpdateFactory.newCameraPosition(
+                    CameraPosition.builder()
+                        .target(userLocation)
+                        .zoom(18f)
+                        .tilt(60f)
+                        .bearing(userBearing)
+                        .build()
+                )
+            } else {
+                CameraUpdateFactory.newLatLng(userLocation)
+            }
+            
             cameraPositionState.animate(
-                update = CameraUpdateFactory.newLatLng(userLocation),
+                update = cameraUpdate,
                 durationMs = 1000
             )
         }
@@ -78,7 +95,10 @@ fun MapView(
             Polyline(
                 points = routePoints,
                 color = Color(0xFF2196F3),
-                width = 12f
+                width = 15f,
+                startCap = RoundCap(),
+                endCap = RoundCap(),
+                jointType = JointType.ROUND
             )
         }
     }

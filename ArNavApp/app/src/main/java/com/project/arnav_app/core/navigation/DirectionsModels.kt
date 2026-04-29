@@ -5,13 +5,13 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class DirectionsResponse(
-    val routes: List<Route> = emptyList(),
+    val routes: List<DirectionsRoute> = emptyList(),
     val status: String = "",
     @SerialName("error_message") val errorMessage: String? = null
 )
 
 @Serializable
-data class Route(
+data class DirectionsRoute(
     @SerialName("overview_polyline") val overviewPolyline: Polyline? = null,
     val legs: List<Leg> = emptyList()
 )

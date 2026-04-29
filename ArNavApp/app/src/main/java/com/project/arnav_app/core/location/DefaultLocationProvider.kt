@@ -30,13 +30,23 @@ class DefaultLocationProvider(
             }
         }
 
-        try {
-            client.requestLocationUpdates(request, callback, Looper.getMainLooper())
-                .addOnFailureListener { e ->
-                    close(e)
-                }
-        } catch (e: Exception) {
-            close(e)
+        if (androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.ACCESS_FINE_LOCATION
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.ACCESS_COARSE_LOCATION
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            try {
+                client.requestLocationUpdates(request, callback, Looper.getMainLooper())
+                    .addOnFailureListener { e ->
+                        close(e)
+                    }
+            } catch (e: Exception) {
+                close(e)
+            }
+        } else {
+            // Wait for permissions
         }
 
         awaitClose {

@@ -6,8 +6,8 @@ import com.project.arnav_app.core.location.LocationProvider
 import com.project.arnav_app.core.navigation.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
-
 import com.google.android.libraries.places.api.model.AutocompletePrediction
+import java.util.concurrent.atomic.AtomicBoolean
 
 class NavigationViewModel(
     private val locationProvider: LocationProvider,
@@ -17,7 +17,7 @@ class NavigationViewModel(
     private val placesRepository: PlacesRepository
 ) : ViewModel() {
 
-    private val _routeResponse = MutableStateFlow<DirectionsResponse?>(null)
+    private val _route = MutableStateFlow<Route?>(null)
     
     private val _searchQuery = MutableStateFlow("")
     val searchQuery = _searchQuery.asStateFlow()
@@ -25,16 +25,24 @@ class NavigationViewModel(
     private val _suggestions = MutableStateFlow<List<AutocompletePrediction>>(emptyList())
     val suggestions = _suggestions.asStateFlow()
 
+    private val _errorMessage = MutableStateFlow<String?>(null)
+
     private var searchJob: Job? = null
-    private var isFetchingRoute = false
+    private val isFetchingRoute = AtomicBoolean(false)
+    private var lastInstruction: String? = null
+    private var lastFailedDestination: GeoPoint? = null
 
     fun onSearchQueryChanged(query: String) {
         _searchQuery.value = query
         searchJob?.cancel()
         if (query.length >= 3) {
             searchJob = viewModelScope.launch {
-                val results = placesRepository.getAutocompleteSuggestions(query)
-                _suggestions.value = results
+                try {
+                    val results = placesRepository.getAutocompleteSuggestions(query)
+                    _suggestions.value = results
+                } catch (e: Exception) {
+                    _suggestions.value = emptyList()
+                }
             }
         } else {
             _suggestions.value = emptyList()
@@ -42,14 +50,16 @@ class NavigationViewModel(
     }
 
     fun onSuggestionSelected(prediction: AutocompletePrediction) {
-        _searchQuery.value = prediction.getPrimaryText(null).toString()
+        _searchQuery.value = prediction.getPrimaryText(null)?.toString() ?: ""
         _suggestions.value = emptyList()
         viewModelScope.launch {
-            val geoPoint = placesRepository.getPlaceCoordinates(prediction.placeId)
-            if (geoPoint != null) {
-                destinationProvider.setDestination(geoPoint)
-                // Navigation will auto-start because NavigationEngine will 
-                // produce a state with routePoints when destination is set.
+            try {
+                val geoPoint = placesRepository.getPlaceCoordinates(prediction.placeId)
+                if (geoPoint != null) {
+                    destinationProvider.setDestination(geoPoint)
+                }
+            } catch (e: Exception) {
+                _errorMessage.value = "Failed to get location for selected place."
             }
         }
     }
@@ -62,7 +72,7 @@ class NavigationViewModel(
     @OptIn(ExperimentalCoroutinesApi::class)
     val uiState: StateFlow<NavigationState> = combine(
         locationProvider.locationFlow
-            .map { GeoPoint(it.latitude, it.longitude) }
+            .map { GeoPoint(it.latitude, it.longitude, it.bearing) }
             .onStart { emit(GeoPoint(0.0, 0.0)) }
             .catch { e -> 
                 android.util.Log.e("NavigationViewModel", "Location flow error", e)
@@ -70,15 +80,15 @@ class NavigationViewModel(
             }
             .distinctUntilChanged(),
         destinationProvider.destinationFlow,
-        _routeResponse.asStateFlow()
-    ) { location, destination, response ->
+        _route.asStateFlow(),
+        _errorMessage.asStateFlow()
+    ) { location, destination, currentRoute, error ->
         withContext(Dispatchers.Default) {
-            navigationEngine.calculateNavigationState(location, destination, response)
+            navigationEngine.calculateNavigationState(location, destination, currentRoute)
+                .copy(errorMessage = error)
         }
     }.onEach { state: NavigationState ->
-        if (state.isOffRoute && state.currentLocation != null && state.destination != null && state.currentLocation.latitude != 0.0 && !isFetchingRoute) {
-            recalculateRoute(state.currentLocation, state.destination)
-        }
+        handleNavigationEvents(state)
     }.flowOn(Dispatchers.Default)
     .stateIn(
         scope = viewModelScope,
@@ -86,8 +96,20 @@ class NavigationViewModel(
         initialValue = NavigationState()
     )
 
+    private fun handleNavigationEvents(state: NavigationState) {
+        // Off-route detection
+        if (state.isOffRoute && state.currentLocation != null && state.destination != null && !isFetchingRoute.get()) {
+            recalculateRoute(state.currentLocation, state.destination)
+        }
+
+        // TTS Trigger: If instruction changed
+        if (state.currentInstruction != lastInstruction && state.currentInstruction.isNotEmpty()) {
+            lastInstruction = state.currentInstruction
+            // TODO: Inject TTS engine and call speak(state.currentInstruction)
+        }
+    }
+
     init {
-        // Automatically fetch route when both destination and location are available
         viewModelScope.launch {
             combine(
                 destinationProvider.destinationFlow,
@@ -97,25 +119,35 @@ class NavigationViewModel(
             }.collect { pair ->
                 if (pair != null) {
                     val (location, destination) = pair
-                    // Only fetch if we don't have a route yet
-                    if (_routeResponse.value == null && !isFetchingRoute) {
+                    if (_route.value == null && !isFetchingRoute.get() && destination != lastFailedDestination) {
                         fetchRoute(location, destination)
                     }
                 } else {
-                    _routeResponse.value = null
+                    _route.value = null
+                    lastInstruction = null
+                    lastFailedDestination = null
+                    _errorMessage.value = null
                 }
             }
         }
     }
 
     private suspend fun fetchRoute(origin: GeoPoint, destination: GeoPoint) {
-        if (isFetchingRoute) return
-        isFetchingRoute = true
+        if (isFetchingRoute.getAndSet(true)) return
+        _errorMessage.value = null
         try {
-            val response = directionsRepository.getRoute(origin, destination)
-            _routeResponse.value = response
+            val route = directionsRepository.getRoute(origin, destination)
+            _route.value = route
+            if (route == null) {
+                lastFailedDestination = destination
+                _errorMessage.value = "Could not find a walking route to this destination."
+            } else {
+                lastFailedDestination = null
+            }
+        } catch (e: Exception) {
+            _errorMessage.value = "Navigation error: ${e.localizedMessage}"
         } finally {
-            isFetchingRoute = false
+            isFetchingRoute.set(false)
         }
     }
 
@@ -129,7 +161,9 @@ class NavigationViewModel(
         if (lat == 0.0 && lng == 0.0) {
             destinationProvider.setDestination(null)
             _searchQuery.value = ""
-            _routeResponse.value = null
+            _route.value = null
+            lastInstruction = null
+            _errorMessage.value = null
         } else {
             val destination = GeoPoint(lat, lng)
             destinationProvider.setDestination(destination)
@@ -141,6 +175,7 @@ class NavigationViewModel(
         if (query.length < 3) return
         
         viewModelScope.launch {
+            _errorMessage.value = null
             val geoPoint = try {
                 placesRepository.searchPlaceByText(query)
             } catch (e: Exception) {
@@ -151,10 +186,7 @@ class NavigationViewModel(
                 destinationProvider.setDestination(geoPoint)
                 _suggestions.value = emptyList()
             } else {
-                // Fallback: try using the first suggestion if direct search fails
-                _suggestions.value.firstOrNull()?.let { suggestion ->
-                    onSuggestionSelected(suggestion)
-                }
+                _errorMessage.value = "Place not found."
             }
         }
     }

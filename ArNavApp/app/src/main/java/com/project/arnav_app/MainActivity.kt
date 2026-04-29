@@ -18,7 +18,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
+import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import com.project.arnav_app.core.location.DefaultLocationProvider
 import com.google.android.libraries.places.api.Places
 import com.project.arnav_app.core.navigation.*
@@ -36,25 +36,25 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        
+
         // Manual DI for MVP
         val apiKey = "AIzaSyA-H9sCG0f14XtInSdBvnYjcJcY56-RTGY"
-        
+
         if (!Places.isInitialized()) {
             Places.initialize(applicationContext, apiKey)
         }
         val placesRepository = PlacesRepository(applicationContext)
-        
-        val logging = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BODY
-        }
+
+        val logging = HttpLoggingInterceptor()
+        logging.level = HttpLoggingInterceptor.Level.BODY
+
         val client = OkHttpClient.Builder()
             .addInterceptor(logging)
             .build()
 
         val json = Json { ignoreUnknownKeys = true }
         val contentType = "application/json".toMediaType()
-        
+
         val retrofit = Retrofit.Builder()
             .baseUrl("https://maps.googleapis.com/")
             .client(client)
@@ -63,14 +63,14 @@ class MainActivity : ComponentActivity() {
 
         val apiService = retrofit.create(DirectionsApiService::class.java)
         val directionsRepository = DirectionsRepository(apiService, apiKey)
-        
+
         val locationProvider = DefaultLocationProvider(applicationContext)
         val destinationProvider = InMemoryDestinationProvider()
         val navigationEngine = RealTimeNavigationEngine()
-        
+
         val factory = NavigationViewModelFactory(
-            locationProvider, 
-            destinationProvider, 
+            locationProvider,
+            destinationProvider,
             directionsRepository,
             navigationEngine,
             placesRepository
@@ -78,15 +78,15 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             ArNavAppTheme {
-                val viewModel: NavigationViewModel = viewModel(factory = factory)
-                val uiState by viewModel.uiState.collectAsState()
+                val navViewModel: NavigationViewModel = viewModel(factory = factory)
+                val uiState by navViewModel.uiState.collectAsState()
 
                 val permissionLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.RequestMultiplePermissions()
                 ) { permissions ->
                     val granted = permissions.values.all { it }
                     if (!granted) {
-                        Toast.makeText(this, "Location permission is required for navigation", Toast.LENGTH_LONG).show()
+                        Toast.makeText(this@MainActivity, "Location permission is required for navigation", Toast.LENGTH_LONG).show()
                     }
                 }
 
@@ -101,20 +101,20 @@ class MainActivity : ComponentActivity() {
                 }
 
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    val searchQuery by viewModel.searchQuery.collectAsState()
-                    val suggestions by viewModel.suggestions.collectAsState()
+                    val searchQuery by navViewModel.searchQuery.collectAsState()
+                    val suggestions by navViewModel.suggestions.collectAsState()
 
                     NavigationScreen(
                         state = uiState,
                         searchQuery = searchQuery,
                         suggestions = suggestions,
-                        onSearchQueryChanged = { viewModel.onSearchQueryChanged(it) },
-                        onSuggestionSelected = { viewModel.onSuggestionSelected(it) },
-                        onSpeechResult = { viewModel.onSpeechResult(it) },
+                        onSearchQueryChanged = { navViewModel.onSearchQueryChanged(it) },
+                        onSuggestionSelected = { navViewModel.onSuggestionSelected(it) },
+                        onSpeechResult = { navViewModel.onSpeechResult(it) },
                         onStartNavigation = { lat, lng ->
-                            viewModel.updateDestination(lat, lng)
+                            navViewModel.updateDestination(lat, lng)
                         },
-                        onSearchClicked = { viewModel.performSearch() },
+                        onSearchClicked = { navViewModel.performSearch() },
                         modifier = Modifier.padding(innerPadding)
                     )
                 }

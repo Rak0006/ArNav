@@ -6,10 +6,16 @@ import kotlin.math.*
 
 class RealTimeNavigationEngine : NavigationEngine {
 
+    companion object {
+        private const val STEP_THRESHOLD_METERS = 8.0 // Smaller for walking
+        private const val ARRIVAL_THRESHOLD_METERS = 10.0
+        private const val OFF_ROUTE_THRESHOLD_METERS = 30.0
+    }
+
     override fun observeNavigationState(
         locationFlow: Flow<GeoPoint>,
         destinationFlow: Flow<GeoPoint?>,
-        routeResponse: Flow<DirectionsResponse?>
+        routeResponse: Flow<Route?>
     ): Flow<NavigationState> = combine(locationFlow, destinationFlow, routeResponse) { location, destination, route ->
         calculateNavigationState(location, destination, route)
     }
@@ -17,94 +23,117 @@ class RealTimeNavigationEngine : NavigationEngine {
     override fun calculateNavigationState(
         location: GeoPoint,
         destination: GeoPoint?,
-        routeResponse: DirectionsResponse?
+        route: Route?
     ): NavigationState {
-        // Return early if we don't have enough data to navigate or invalid location
-        if (destination == null || routeResponse == null || routeResponse.routes.isNullOrEmpty() || location.latitude == 0.0) {
-            val errorMsg = if (routeResponse?.status != "OK" && routeResponse?.status != "") {
-                routeResponse?.errorMessage ?: "Directions API error: ${routeResponse?.status}"
-            } else if (routeResponse != null && routeResponse.routes.isEmpty() && routeResponse.status == "OK") {
-                "No route found to destination"
-            } else {
-                null
-            }
-
+        if (destination == null || location.latitude == 0.0) {
             return NavigationState(
                 currentLocation = if (location.latitude == 0.0) null else location,
                 destination = destination,
-                isNavigating = false,
-                routePoints = emptyList(),
-                errorMessage = errorMsg
+                route = route,
+                isNavigating = false
             )
         }
 
-        return try {
-            val route = routeResponse.routes.getOrNull(0) ?: return NavigationState(currentLocation = location, destination = destination)
-            val leg = route.legs.getOrNull(0) ?: return NavigationState(currentLocation = location, destination = destination)
-            val steps = leg.steps ?: emptyList()
-            if (steps.isEmpty()) return NavigationState(currentLocation = location, destination = destination)
-            val points = route.overviewPolyline?.points ?: ""
-            val decodedPath = if (points.isNotEmpty()) PolylineUtil.decode(points) else emptyList()
-
-            // 1. Find the current step based on location
-            var activeStepIndex = 0
-            var minDistance = Double.MAX_VALUE
-
-            for (i in steps.indices) {
-                val step = steps[i]
-                val startLoc = step.startLocation ?: continue
-                val dist = calculateDistance(location.latitude, location.longitude, startLoc.lat, startLoc.lng)
-                if (dist < minDistance) {
-                    minDistance = dist
-                    activeStepIndex = i
-                }
-            }
-
-            val activeStep = steps.getOrNull(activeStepIndex)
-            val distanceToActiveStepEnd = activeStep?.endLocation?.let { endLoc ->
-                calculateDistance(location.latitude, location.longitude, endLoc.lat, endLoc.lng)
-            } ?: 0.0
-
-            // 2. Calculate remaining distance
-            var remainingDistance = distanceToActiveStepEnd
-            for (i in (activeStepIndex + 1) until steps.size) {
-                remainingDistance += (steps[i].distance?.value ?: 0).toDouble()
-            }
-
-            NavigationState(
-                routePoints = decodedPath,
-                totalDistance = leg.distance?.text ?: "Unknown",
-                eta = leg.duration?.text ?: "Unknown",
-                currentInstruction = parseHtml(activeStep?.htmlInstructions ?: "Follow the route"),
-                distanceToNextStep = distanceToActiveStepEnd,
-                distanceRemaining = remainingDistance,
-                isNavigating = true,
+        if (route == null) {
+            return NavigationState(
                 currentLocation = location,
                 destination = destination,
-                isOffRoute = isUserOffRoute(location, decodedPath, 50.0)
+                isNavigating = false
             )
-        } catch (e: Exception) {
-            android.util.Log.e("NavigationEngine", "Error calculating state", e)
-            NavigationState(currentLocation = location, destination = destination)
         }
+
+        // Check if destination is reached
+        val distanceToDestination = calculateDistance(location, destination)
+        if (distanceToDestination < ARRIVAL_THRESHOLD_METERS) {
+            return NavigationState(
+                route = route,
+                currentLocation = location,
+                destination = destination,
+                isNavigating = false,
+                isArrived = true,
+                currentInstruction = "You have arrived at your destination"
+            )
+        }
+
+        val steps = route.steps
+        if (steps.isEmpty()) {
+            return NavigationState(
+                route = route,
+                currentLocation = location,
+                destination = destination,
+                isNavigating = true
+            )
+        }
+
+        // 1. Find the current step based on distance to step ends
+        var activeStepIndex = 0
+        var minDistanceToStep = Double.MAX_VALUE
+
+        for (i in steps.indices) {
+            val step = steps[i]
+            val dist = calculateDistance(location, step.start)
+            if (dist < minDistanceToStep) {
+                minDistanceToStep = dist
+                activeStepIndex = i
+            }
+        }
+
+        // Logic to advance step if we are close to the end of the current step
+        val currentStep = steps[activeStepIndex]
+        val distanceToNextStep = calculateDistance(location, currentStep.end)
+        
+        var finalStepIndex = activeStepIndex
+        if (distanceToNextStep < STEP_THRESHOLD_METERS && activeStepIndex < steps.size - 1) {
+            finalStepIndex++
+        }
+
+        val activeStep = steps[finalStepIndex]
+        val distToNext = calculateDistance(location, activeStep.end).toFloat()
+
+        // 2. Calculate remaining total distance
+        var totalRemaining = distToNext
+        for (i in (finalStepIndex + 1) until steps.size) {
+            totalRemaining += steps[i].distanceMeters
+        }
+
+        // 3. Off-route detection and Closest Point search
+        var closestPolylineIndex = 0
+        var minPolyDist = Double.MAX_VALUE
+        val polyline = route.polyline
+
+        for (i in polyline.indices) {
+            val dist = calculateDistance(location, polyline[i])
+            if (dist < minPolyDist) {
+                minPolyDist = dist
+                closestPolylineIndex = i
+            }
+        }
+
+        val isUserOffRoute = minPolyDist > OFF_ROUTE_THRESHOLD_METERS
+
+        return NavigationState(
+            route = route,
+            currentLocation = location,
+            destination = destination,
+            currentStepIndex = finalStepIndex,
+            currentInstruction = activeStep.instruction,
+            nextInstruction = steps.getOrNull(finalStepIndex + 1)?.instruction,
+            distanceToNextStep = distToNext,
+            totalDistanceRemaining = totalRemaining,
+            isOffRoute = isUserOffRoute,
+            isNavigating = true,
+            closestPolylineIndex = closestPolylineIndex
+        )
     }
 
-    private fun isUserOffRoute(location: GeoPoint, path: List<GeoPoint>, threshold: Double): Boolean {
-        if (path.isEmpty()) return false
-        return path.none { calculateDistance(location.latitude, location.longitude, it.latitude, it.longitude) < threshold }
-    }
-
-    private fun parseHtml(html: String): String {
-        return html.replace(Regex("<[^>]*>"), "").replace("&nbsp;", " ").trim()
-    }
-
-    private fun calculateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
-        val r = 6371000.0
-        val dLat = Math.toRadians(lat2 - lat1)
-        val dLon = Math.toRadians(lon2 - lon1)
-        val a = sin(dLat / 2) * sin(dLat / 2) +
-                cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) *
-                sin(dLon / 2) * sin(dLon / 2)
-        return r * 2 * atan2(sqrt(a), sqrt(1 - a))
+    private fun calculateDistance(a: GeoPoint, b: GeoPoint): Double {
+        val r = 6371000.0 // Earth radius in meters
+        val dLat = Math.toRadians(b.latitude - a.latitude)
+        val dLon = Math.toRadians(b.longitude - a.longitude)
+        val aVal = (sin(dLat / 2) * sin(dLat / 2) +
+                cos(Math.toRadians(a.latitude)) * cos(Math.toRadians(b.latitude)) *
+                sin(dLon / 2) * sin(dLon / 2)).coerceIn(0.0, 1.0)
+        val c = 2 * atan2(sqrt(aVal), sqrt(1 - aVal))
+        return r * c
     }
 }

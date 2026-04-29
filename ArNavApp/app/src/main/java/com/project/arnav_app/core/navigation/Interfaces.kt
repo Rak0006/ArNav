@@ -11,12 +11,12 @@ interface NavigationEngine {
     fun observeNavigationState(
         locationFlow: Flow<GeoPoint>,
         destinationFlow: Flow<GeoPoint?>,
-        routeResponse: Flow<DirectionsResponse?>
+        routeFlow: Flow<Route?>
     ): Flow<NavigationState>
 
     fun calculateNavigationState(
         location: GeoPoint,
         destination: GeoPoint?,
-        routeResponse: DirectionsResponse?
+        route: Route?
     ): NavigationState
 }
