@@ -38,11 +38,6 @@ class DefaultLocationProvider(
             ) == android.content.pm.PackageManager.PERMISSION_GRANTED
         ) {
             try {
-                // Get last known location immediately
-                client.lastLocation.addOnSuccessListener { location ->
-                    location?.let { trySend(it) }
-                }
-
                 client.requestLocationUpdates(request, callback, Looper.getMainLooper())
                     .addOnFailureListener { e ->
                         close(e)

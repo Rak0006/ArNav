@@ -1,6 +1,8 @@
 package com.project.arnav_app.core.navigation
 
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.scan
 import kotlin.math.*
 
 class RealTimeNavigationEngine : NavigationEngine {
@@ -15,66 +17,29 @@ class RealTimeNavigationEngine : NavigationEngine {
     override fun observeNavigationState(
         locationFlow: Flow<GeoPoint>,
         destinationFlow: Flow<GeoPoint?>,
-        routeFlow: Flow<Route?>,
-        isNavigatingFlow: Flow<Boolean>
-    ): Flow<NavigationState> = combine(
-        locationFlow.onStart { emit(GeoPoint(0.0, 0.0)) },
-        destinationFlow.onStart { emit(null) },
-        routeFlow,
-        isNavigatingFlow
-    ) { loc, dest, route, isNav ->
-        NavigationBundle(loc, dest, route, isNav)
-    }.map { (location, destination, route, isNavigating) ->
-
-        // If navigation not started → idle state
-        if (!isNavigating) {
-            return@map NavigationState(
-                currentLocation = if (location.latitude == 0.0) null else location,
-                destination = destination,
-                route = route,
-                isNavigating = false
-            )
+        routeFlow: Flow<Route?>
+    ): Flow<NavigationState> = combine(locationFlow, destinationFlow, routeFlow) { location, destination, route ->
+        Triple(location, destination, route)
+    }.scan(NavigationState()) { prevState, (location, destination, route) ->
+        val currentRoute = route
+        // Reset index if route changes
+        val (index, lastPolyIndex) = if (currentRoute != prevState.route) {
+            findClosestStepIndex(location, currentRoute) to 0
+        } else {
+            prevState.currentStepIndex to prevState.closestPolylineIndex
         }
-
-        // Compute fresh every time (no stale state)
-        val index = findClosestStepIndex(location, route)
-
-        calculateNavigationStateInternal(
-            location = location,
-            destination = destination,
-            route = route,
-            startIndex = index,
-            lastPolyIndex = 0,
-            wasNavigating = true
-        )
+        
+        calculateNavigationStateInternal(location, destination, currentRoute, index, lastPolyIndex)
     }
-//    .scan(NavigationState()) { prevState, bundle ->
-//        val (location, destination, route, isNavigating) = bundle
-//
-//        // Reset index if route changes
-//        val (index, lastPolyIndex) = if (route != prevState.route) {
-//            findClosestStepIndex(location, route) to 0
-//        } else {
-//            prevState.currentStepIndex to prevState.closestPolylineIndex
-//        }
-//
-//        calculateNavigationStateInternal(location, destination, route, index, lastPolyIndex, isNavigating)
-//    }
-
-    private data class NavigationBundle(
-        val location: GeoPoint,
-        val destination: GeoPoint?,
-        val route: Route?,
-        val isNavigating: Boolean
-    )
 
     override fun calculateNavigationState(
         location: GeoPoint,
         destination: GeoPoint?,
         route: Route?
     ): NavigationState {
+        // Stateless fallback
         val index = findClosestStepIndex(location, route)
-        return calculateNavigationStateInternal(location, destination, route, index, 0, false)
+        return calculateNavigationStateInternal(location, destination, route, index, 0)
     }
 
     private fun calculateNavigationStateInternal(
@@ -82,15 +47,14 @@ class RealTimeNavigationEngine : NavigationEngine {
         destination: GeoPoint?,
         route: Route?,
         startIndex: Int,
-        lastPolyIndex: Int,
-        wasNavigating: Boolean = false
+        lastPolyIndex: Int
     ): NavigationState {
         if (destination == null || location.latitude == 0.0) {
             return NavigationState(
                 currentLocation = if (location.latitude == 0.0) null else location,
                 destination = destination,
                 route = route,
-                isNavigating = wasNavigating
+                isNavigating = false
             )
         }
 
@@ -98,7 +62,7 @@ class RealTimeNavigationEngine : NavigationEngine {
             return NavigationState(
                 currentLocation = location,
                 destination = destination,
-                isNavigating = wasNavigating
+                isNavigating = false
             )
         }
 
@@ -108,20 +72,18 @@ class RealTimeNavigationEngine : NavigationEngine {
                 route = route,
                 currentLocation = location,
                 destination = destination,
-                isNavigating = wasNavigating
+                isNavigating = true
             )
         }
 
         // Check if destination is reached
         val distanceToDestination = calculateDistance(location, destination)
-        val isArrived = distanceToDestination < ARRIVAL_THRESHOLD_METERS && wasNavigating
-
-        if (isArrived) {
+        if (distanceToDestination < ARRIVAL_THRESHOLD_METERS) {
             return NavigationState(
                 route = route,
                 currentLocation = location,
                 destination = destination,
-                isNavigating = wasNavigating,
+                isNavigating = false,
                 isArrived = true,
                 currentInstruction = "You have arrived at your destination"
             )
@@ -156,11 +118,12 @@ class RealTimeNavigationEngine : NavigationEngine {
             totalRemaining += steps[i].distanceMeters
         }
 
-        // Closest polyline point
+        // Closest polyline point for map display slicing
         var minPolyDist = Double.MAX_VALUE
         var closestPolylineIndex = lastPolyIndex
         val polyline = route.polyline
         
+        // Search a window around the last index first
         val windowSize = 30
         val startSearch = (lastPolyIndex - 5).coerceAtLeast(0)
         val endSearch = (lastPolyIndex + windowSize).coerceAtMost(polyline.size - 1)
@@ -173,6 +136,7 @@ class RealTimeNavigationEngine : NavigationEngine {
             }
         }
 
+        // If even the best in the window is too far, search everything
         if (minPolyDist > OFF_ROUTE_THRESHOLD_METERS) {
             for (i in polyline.indices) {
                 val dist = calculateDistance(location, polyline[i])
@@ -183,7 +147,7 @@ class RealTimeNavigationEngine : NavigationEngine {
             }
         }
 
-        val isUserOffRoute = minPolyDist > OFF_ROUTE_THRESHOLD_METERS && wasNavigating
+        val isUserOffRoute = minPolyDist > OFF_ROUTE_THRESHOLD_METERS
 
         return NavigationState(
             route = route,
@@ -195,7 +159,7 @@ class RealTimeNavigationEngine : NavigationEngine {
             distanceToNextStep = distToNext,
             totalDistanceRemaining = totalRemaining,
             isOffRoute = isUserOffRoute,
-            isNavigating = wasNavigating,
+            isNavigating = true,
             closestPolylineIndex = closestPolylineIndex
         )
     }

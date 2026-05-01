@@ -34,9 +34,7 @@ class PlacesRepository(context: Context) {
             val firstPlace = response.places.firstOrNull()
             firstPlace?.latLng?.let { GeoPoint(it.latitude, it.longitude) }
         } catch (e: Exception) {
-            Log.e("PlacesRepo", "SearchByText error (Ensure 'Places API (New)' is enabled): ${e.message}")
-            // Fallback: If SearchByText fails, we might want to use autocomplete and then fetch coordinates
-            // but for now, we'll just log and return null to avoid confusion.
+            Log.e("PlacesRepo", "SearchByText error: ${e.message}")
             null
         }
     }

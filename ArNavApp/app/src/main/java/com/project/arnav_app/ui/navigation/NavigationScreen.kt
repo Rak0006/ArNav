@@ -1,29 +1,22 @@
 package com.project.arnav_app.ui.navigation
 
-import androidx.compose.animation.core.*
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
@@ -34,37 +27,28 @@ import androidx.compose.ui.unit.sp
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.libraries.places.api.model.AutocompletePrediction
 import com.project.arnav_app.core.navigation.NavigationState
-import com.project.arnav_app.core.navigation.VoiceState
 import com.project.arnav_app.ui.map.MapView
-import com.project.arnav_app.ui.navigation.interaction.VoiceTriggerOverlay
 
 @Composable
 fun NavigationScreen(
     state: NavigationState,
-    voiceState: VoiceState,
-    partialText: String, // Add this
     searchQuery: String,
     suggestions: List<AutocompletePrediction>,
     onSearchQueryChanged: (String) -> Unit,
     onSuggestionSelected: (AutocompletePrediction) -> Unit,
-    onOverlayTap: () -> Unit,
-    onStartClick: () -> Unit,
-    onStopClick: () -> Unit,
-    onSetDestination: (Double, Double) -> Unit,
+    onSpeechResult: (String) -> Unit,
+    onStartNavigation: (Double, Double) -> Unit,
     onSearchClicked: () -> Unit,
-    isMapTracking: Boolean,
-    onReCenterClick: () -> Unit,
-    onTestClick: () -> Unit = {}, 
-    onTestConfirmClick: () -> Unit = {}, // New callback
     modifier: Modifier = Modifier
 ) {
     Box(modifier = modifier.fillMaxSize()) {
+        // Bottom Layer: Map and Instructions
         Column(modifier = Modifier.fillMaxSize()) {
-            // Top 55%: Map
+            // Map Section
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(0.55f)
+                    .weight(0.5f)
             ) {
                 val location = state.currentLocation
                 if (location != null && location.latitude != 0.0) {
@@ -82,22 +66,9 @@ fun NavigationScreen(
                         destination = destinationLatLng,
                         routePoints = routeLatLngPoints,
                         onMapLongClick = { latLng ->
-                            onSetDestination(latLng.latitude, latLng.longitude)
+                            onStartNavigation(latLng.latitude, latLng.longitude)
                         }
                     )
-
-                    if (!isMapTracking) {
-                        FloatingActionButton(
-                            onClick = onReCenterClick,
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(16.dp),
-                            containerColor = MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                        ) {
-                            Icon(Icons.Default.MyLocation, contentDescription = "Re-center")
-                        }
-                    }
                 } else {
                     Box(
                         modifier = Modifier.fillMaxSize().background(Color.DarkGray),
@@ -108,125 +79,162 @@ fun NavigationScreen(
                 }
             }
 
-            // Middle 35%: Voice Zone & Details
-            Box(
+            // Instructions / Status Section
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(0.35f)
+                    .weight(0.5f)
+                    .padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    if (state.isNavigating && state.route != null) {
-                        NavigationInfoCard(state)
-                    } else if (state.isArrived) {
-                        ArrivalCard(onStopClick)
-                    } else {
-                        DefaultStatusSection(state)
-                    }
-                }
-
-                // Voice Zone Overlay (Touch sensitive)
-                VoiceTriggerOverlay(
-                    onTrigger = onOverlayTap,
-                    modifier = Modifier.fillMaxSize()
-                )
-
-                if (voiceState != VoiceState.IDLE && voiceState != VoiceState.NAVIGATING) {
-                    val infiniteTransition = rememberInfiniteTransition(label = "voiceGlow")
-                    val alpha by infiniteTransition.animateFloat(
-                        initialValue = 0.3f,
-                        targetValue = 0.7f,
-                        animationSpec = infiniteRepeatable(
-                            animation = tween(1000, easing = LinearEasing),
-                            repeatMode = RepeatMode.Reverse
-                        ),
-                        label = "glowAlpha"
-                    )
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                Brush.radialGradient(
-                                    colors = listOf(
-                                        Color.Cyan.copy(alpha = alpha),
-                                        Color.Transparent
-                                    )
-                                )
-                            )
-                            .background(Color.Black.copy(alpha = 0.4f)),
-                        contentAlignment = Alignment.Center
+                if (state.isNavigating && state.routePoints.isNotEmpty()) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1B5E20), contentColor = Color.White),
+                        shape = RoundedCornerShape(16.dp)
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            if (voiceState == VoiceState.PROCESSING) {
-                                CircularProgressIndicator(
-                                    color = Color.Cyan,
-                                    modifier = Modifier.size(48.dp)
-                                )
-                                Spacer(modifier = Modifier.height(16.dp))
-                            }
-                            
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
                             Text(
-                                text = when(voiceState) {
-                                    VoiceState.LISTENING -> "Listening..."
-                                    VoiceState.PROCESSING -> "Thinking..."
-                                    VoiceState.DEST_CONFIRM -> "Confirm Destination?"
-                                    VoiceState.ROUTE_CONFIRM -> "Start Route?"
-                                    else -> ""
-                                },
-                                color = Color.White,
-                                style = MaterialTheme.typography.headlineMedium,
+                                text = state.currentInstruction.ifEmpty { "Calculating..." },
+                                style = MaterialTheme.typography.headlineSmall,
+                                textAlign = TextAlign.Center,
                                 fontWeight = FontWeight.Bold
                             )
-                            Spacer(modifier = Modifier.height(16.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = partialText,
-                                color = Color.White,
-                                style = MaterialTheme.typography.bodyLarge,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(horizontal = 32.dp)
+                                text = "Next step in ${state.distanceToNextStep.toInt()}m",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = Color.Yellow
                             )
                         }
                     }
-                }
-            }
 
-            // Bottom 10%: Buttons
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(0.1f)
-                    .padding(8.dp),
-                contentAlignment = Alignment.Center
-            ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        InfoTile(label = "Distance", value = state.totalDistance)
+                        InfoTile(label = "ETA", value = state.eta)
+                        InfoTile(label = "Remaining", value = state.distanceRemainingFormatted)
+                    }
+                } else if (state.isArrived) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1976D2), contentColor = Color.White),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                modifier = Modifier.size(48.dp),
+                                tint = Color.White
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "You have arrived!",
+                                style = MaterialTheme.typography.headlineMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Your destination is nearby.",
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                            Spacer(modifier = Modifier.height(24.dp))
+                            Button(
+                                onClick = { onStartNavigation(0.0, 0.0) },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("FINISH")
+                            }
+                        }
+                    }
+                } else {
+                    Text(
+                        text = "ArNav Professional Navigation",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    if (state.errorMessage != null) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = state.errorMessage,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(12.dp),
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    } else {
+                        Text(
+                            text = if (state.destination != null && state.routePoints.isNotEmpty()) 
+                                "Route found! Tap START to begin." 
+                            else if (state.destination != null)
+                                "Calculating route..."
+                            else 
+                                "Enter a destination to start your journey",
+                            textAlign = TextAlign.Center,
+                            color = Color.Gray
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.weight(1f))
+
                 if (!state.isNavigating) {
                     Button(
-                        onClick = onStartClick,
-                        modifier = Modifier.fillMaxSize(),
-                        enabled = state.route != null,
-                        shape = RoundedCornerShape(12.dp)
+                        onClick = { 
+                            state.destination?.let { 
+                                onStartNavigation(it.latitude, it.longitude) 
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(60.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        enabled = state.currentLocation != null && state.destination != null && state.routePoints.isNotEmpty()
                     ) {
-                        Text("START NAVIGATION", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = "START NAVIGATION",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 } else {
                     Button(
-                        onClick = onStopClick,
-                        modifier = Modifier.fillMaxSize(),
+                        onClick = { 
+                            onStartNavigation(0.0, 0.0) // Clear destination to stop
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(60.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text("STOP NAVIGATION", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = "STOP NAVIGATION",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }
         }
 
-        // Floating Search Section
+        // Top Layer: Floating Search Section
         SearchSection(
             query = searchQuery,
             suggestions = suggestions,
@@ -236,137 +244,6 @@ fun NavigationScreen(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .statusBarsPadding()
-        )
-
-        // Debug Buttons
-        Column(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .statusBarsPadding()
-                .padding(end = 8.dp, top = 70.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Button(
-                onClick = onTestClick,
-                colors = ButtonDefaults.buttonColors(containerColor = Color.Magenta.copy(alpha = 0.6f)),
-                contentPadding = PaddingValues(4.dp)
-            ) {
-                Text("NAV TEST", fontSize = 10.sp)
-            }
-            Button(
-                onClick = onTestConfirmClick,
-                colors = ButtonDefaults.buttonColors(containerColor = Color.Cyan.copy(alpha = 0.6f)),
-                contentPadding = PaddingValues(4.dp)
-            ) {
-                Text("YES TEST", fontSize = 10.sp)
-            }
-        }
-    }
-}
-
-@Composable
-fun NavigationInfoCard(state: NavigationState) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF1B5E20), contentColor = Color.White),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = state.currentInstruction.ifEmpty { "Calculating..." },
-                style = MaterialTheme.typography.headlineSmall,
-                textAlign = TextAlign.Center,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "Next step in ${state.distanceToNextStep.toInt()}m",
-                style = MaterialTheme.typography.titleMedium,
-                color = Color.Yellow
-            )
-        }
-    }
-
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceEvenly
-    ) {
-        InfoTile(label = "Distance", value = state.totalDistance)
-        InfoTile(label = "ETA", value = state.eta)
-        InfoTile(label = "Remaining", value = state.distanceRemainingFormatted)
-    }
-}
-
-@Composable
-fun ArrivalCard(onStopClick: () -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF1976D2), contentColor = Color.White),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Icon(
-                imageVector = Icons.Default.CheckCircle,
-                contentDescription = null,
-                modifier = Modifier.size(48.dp),
-                tint = Color.White
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = "You have arrived!",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(24.dp))
-            Button(
-                onClick = onStopClick,
-                colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("FINISH")
-            }
-        }
-    }
-}
-
-@Composable
-fun DefaultStatusSection(state: NavigationState) {
-    Text(
-        text = "ArNav Professional Navigation",
-        style = MaterialTheme.typography.titleLarge,
-        fontWeight = FontWeight.Bold
-    )
-    
-    Spacer(modifier = Modifier.height(24.dp))
-
-    if (state.errorMessage != null) {
-        Card(
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(
-                text = state.errorMessage,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(12.dp),
-                textAlign = TextAlign.Center
-            )
-        }
-    } else {
-        Text(
-            text = if (state.destination != null && state.route != null)
-                "Route found! Tap START or say 'yes'." 
-            else if (state.destination != null)
-                "Calculating route..."
-            else 
-                "Tap middle to search with voice",
-            textAlign = TextAlign.Center,
-            color = Color.Gray
         )
     }
 }
@@ -452,3 +329,5 @@ fun InfoTile(label: String, value: String) {
         Text(text = value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
     }
 }
+
+fun Double.format(digits: Int) = "%.${digits}f".format(this)
