@@ -36,12 +36,14 @@ class DirectionsRepository(
                 }
 
                 Route(
+                    destination = destination,
                     polyline = decodedPolyline,
                     steps = steps,
                     totalDistanceMeters = leg.distance?.value ?: 0,
                     totalDurationSeconds = leg.duration?.value ?: 0
                 )
             } else {
+                Log.e("DirectionsRepository", "API Error: ${response.status} - ${response.errorMessage}")
                 null
             }
         } catch (e: Exception) {

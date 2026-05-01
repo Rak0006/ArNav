@@ -1,5 +1,7 @@
 package com.project.arnav_app.core.navigation
 
+import kotlinx.serialization.Serializable
+
 data class GeoPoint(
     val latitude: Double,
     val longitude: Double,
@@ -15,6 +17,7 @@ data class NavStep(
 )
 
 data class Route(
+    val destination: GeoPoint,
     val polyline: List<GeoPoint>,
     val steps: List<NavStep>,
     val totalDistanceMeters: Int,
@@ -61,7 +64,7 @@ data class NavigationState(
 
     val eta: String get() = route?.let { "${it.totalDurationSeconds / 60} min" } ?: "0 min"
 
-    private fun calculateDistance(a: GeoPoint, b: GeoPoint): Double {
+    fun calculateDistance(a: GeoPoint, b: GeoPoint): Double {
         val r = 6371000.0
         val dLat = Math.toRadians(b.latitude - a.latitude)
         val dLon = Math.toRadians(b.longitude - a.longitude)
@@ -72,3 +75,11 @@ data class NavigationState(
         return r * c
     }
 }
+
+enum class VoiceState { IDLE, LISTENING, PROCESSING, DEST_CONFIRM, ROUTE_CONFIRM, NAVIGATING }
+
+@Serializable
+data class IntentResult(
+    val intent: String,
+    val destination: String? = null
+)

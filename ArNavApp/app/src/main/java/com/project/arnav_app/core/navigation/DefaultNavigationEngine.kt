@@ -9,9 +9,10 @@ class DefaultNavigationEngine : NavigationEngine {
     override fun observeNavigationState(
         locationFlow: Flow<GeoPoint>,
         destinationFlow: Flow<GeoPoint?>,
-        routeFlow: Flow<Route?>
-    ): Flow<NavigationState> = combine(locationFlow, destinationFlow, routeFlow) { location, destination, route ->
-        calculateNavigationState(location, destination, route)
+        routeFlow: Flow<Route?>,
+        isNavigatingFlow: Flow<Boolean>
+    ): Flow<NavigationState> = combine(locationFlow, destinationFlow, routeFlow, isNavigatingFlow) { location, destination, route, isNavigating ->
+        calculateNavigationState(location, destination, route).copy(isNavigating = isNavigating)
     }
 
     override fun calculateNavigationState(
@@ -19,16 +20,24 @@ class DefaultNavigationEngine : NavigationEngine {
         destination: GeoPoint?,
         route: Route?
     ): NavigationState {
+        // Return basic state without navigation logic
+        // The isNavigating flag will be applied by observeNavigationState
         if (destination == null || route == null || location.latitude == 0.0) {
             return NavigationState(
                 currentLocation = if (location.latitude == 0.0) null else location,
                 destination = destination,
+                route = route,
                 isNavigating = false
             )
         }
 
         val steps = route.steps
-        if (steps.isEmpty()) return NavigationState(currentLocation = location, destination = destination, isNavigating = true, route = route)
+        if (steps.isEmpty()) return NavigationState(
+            currentLocation = location,
+            destination = destination,
+            route = route,
+            isNavigating = false
+        )
 
         // Basic implementation: Find closest step start
         var activeIndex = 0
@@ -52,7 +61,7 @@ class DefaultNavigationEngine : NavigationEngine {
             currentStepIndex = activeIndex,
             currentInstruction = currentStep.instruction,
             distanceToNextStep = distanceToNextStep,
-            isNavigating = true,
+            isNavigating = false,
             closestPolylineIndex = 0
         )
     }
