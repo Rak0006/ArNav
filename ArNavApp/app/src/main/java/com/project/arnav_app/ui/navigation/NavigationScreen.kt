@@ -113,7 +113,7 @@ fun NavigationScreen(
                     .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
                     .background(
                         Brush.verticalGradient(
-                            listOf(Color.Transparent, Color(0xFF1A0A1A))
+                            listOf(Color.Transparent, Color(0xFF0A1A0A))
                         )
                     )
                     .clickable(
@@ -131,7 +131,7 @@ fun NavigationScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(0.12f)
-                    .background(Color(0xFF1A0A1A))
+                    .background(Color(0xFF0A1A0A))
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 contentAlignment = Alignment.Center
             ) {
@@ -165,20 +165,20 @@ fun OverlayContent(state: NavigationState, partialText: String, isTestMode: Bool
                     modifier = Modifier
                         .size(80.dp)
                         .graphicsLayer(scaleX = glowScale, scaleY = glowScale)
-                        .background(Color(0xFFE91E63).copy(alpha = 0.2f), RoundedCornerShape(40.dp)),
+                        .background(Color(0xFF00C853).copy(alpha = 0.2f), RoundedCornerShape(40.dp)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.Mic,
                         contentDescription = null,
                         modifier = Modifier.size(40.dp),
-                        tint = Color(0xFFE91E63)
+                        tint = Color(0xFF00C853)
                     )
                 }
                 Spacer(modifier = Modifier.height(16.dp))
                 if (isTestMode) {
                     Surface(
-                        color = Color(0xFFE91E63),
+                        color = Color(0xFF00C853),
                         shape = RoundedCornerShape(4.dp),
                         modifier = Modifier.padding(bottom = 8.dp)
                     ) {
@@ -206,7 +206,7 @@ fun OverlayContent(state: NavigationState, partialText: String, isTestMode: Bool
             NavSystemState.CONFIRMING -> {
                 Card(
                     modifier = Modifier.fillMaxWidth().padding(8.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF2D1B2D)),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1B2D1B)),
                     shape = RoundedCornerShape(16.dp)
                 ) {
                     Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -221,12 +221,12 @@ fun OverlayContent(state: NavigationState, partialText: String, isTestMode: Bool
                 }
             }
             NavSystemState.NAVIGATING -> {
-                // Main Navigation Instruction Card (Purple Area)
+                // Main Navigation Instruction Card (Green Area)
                 Card(
                     modifier = Modifier.fillMaxWidth().fillMaxHeight().padding(4.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1A0A1A)),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0A1A0A)),
                     shape = RoundedCornerShape(20.dp),
-                    border = CardDefaults.outlinedCardBorder().copy(brush = Brush.linearGradient(listOf(Color(0xFF00C853), Color(0xFF9C27B0))))
+                    border = CardDefaults.outlinedCardBorder().copy(brush = Brush.linearGradient(listOf(Color(0xFF00C853), Color(0xFF004D40))))
                 ) {
                     Column(
                         modifier = Modifier.fillMaxSize().padding(20.dp),
@@ -237,7 +237,7 @@ fun OverlayContent(state: NavigationState, partialText: String, isTestMode: Bool
                             text = state.currentInstruction.ifEmpty { "Follow the path" },
                             style = MaterialTheme.typography.headlineMedium,
                             fontWeight = FontWeight.ExtraBold,
-                            color = Color(0xFFFF4081),
+                            color = Color(0xFF00C853),
                             textAlign = TextAlign.Center
                         )
                         Spacer(modifier = Modifier.height(12.dp))
@@ -252,13 +252,13 @@ fun OverlayContent(state: NavigationState, partialText: String, isTestMode: Bool
             else -> {
                 if (isTestMode) {
                     Surface(
-                        color = Color(0xFFE91E63).copy(alpha = 0.2f),
+                        color = Color(0xFF00C853).copy(alpha = 0.2f),
                         shape = RoundedCornerShape(4.dp),
                         modifier = Modifier.padding(bottom = 8.dp)
                     ) {
                         Text(
                             text = "STT TEST MODE",
-                            color = Color(0xFFE91E63),
+                            color = Color(0xFF00C853),
                             style = MaterialTheme.typography.labelSmall,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                             fontWeight = FontWeight.Bold
@@ -298,7 +298,7 @@ fun ControlPanel(state: NavigationState, onStartNavigation: (Double, Double) -> 
             },
             modifier = Modifier.height(48.dp).width(160.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = if (state.isNavigating) Color(0xFFB00020) else Color(0xFFE91E63)
+                containerColor = if (state.isNavigating) Color(0xFFB00020) else Color(0xFF00C853)
             ),
             shape = RoundedCornerShape(12.dp),
             enabled = state.destination != null || state.isNavigating
@@ -346,7 +346,7 @@ fun SearchSection(
             },
             singleLine = true,
             colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Color(0xFFE91E63),
+                focusedBorderColor = Color(0xFF00C853),
                 unfocusedBorderColor = Color.Transparent,
                 focusedTextColor = Color.White,
                 unfocusedTextColor = Color.White

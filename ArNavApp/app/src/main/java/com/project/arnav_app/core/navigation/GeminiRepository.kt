@@ -108,7 +108,7 @@ class GeminiRepository(private val apiKey: String) {
             return "Fake Response: $distance km away, $eta mins left. Next: $nextInstruction"
         }
         val prompt = """
-        You are a navigation assistant.
+        You are "Marigo", a navigation assistant.
 
         Answer briefly (1 sentence) using this context:
 

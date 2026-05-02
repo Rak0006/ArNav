@@ -35,7 +35,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.project.arnav_app.ui.navigation.NavigationScreen
 import com.project.arnav_app.ui.navigation.NavigationViewModel
 import com.project.arnav_app.ui.navigation.NavigationViewModelFactory
-import com.project.arnav_app.ui.theme.ArNavAppTheme
+import com.project.arnav_app.ui.theme.MarigoTheme
 import com.project.arnav_app.core.navigation.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -84,6 +84,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             navigationEngine = RealTimeNavigationEngine(),
             placesRepository = placesRepository,
             geminiRepository = geminiRepository,
+            hapticFeedbackManager = com.project.arnav_app.core.haptics.HapticFeedbackManager(applicationContext),
             onSpeak = { text, shouldListen ->
                 val params = Bundle()
                 val utteranceId = if (shouldListen) "VOICE_LOOP" else "NORMAL"
@@ -93,7 +94,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         )
 
         setContent {
-            ArNavAppTheme {
+            MarigoTheme {
                 val viewModel: NavigationViewModel = viewModel(factory = factory)
                 val uiState by viewModel.uiState.collectAsState()
                 val searchQuery by viewModel.searchQuery.collectAsState()

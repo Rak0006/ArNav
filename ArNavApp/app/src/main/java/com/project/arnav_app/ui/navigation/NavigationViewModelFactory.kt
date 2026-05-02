@@ -2,6 +2,7 @@ package com.project.arnav_app.ui.navigation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import com.project.arnav_app.core.haptics.HapticFeedbackManager
 import com.project.arnav_app.core.location.LocationProvider
 import com.project.arnav_app.core.navigation.*
 
@@ -12,6 +13,7 @@ class NavigationViewModelFactory(
     private val navigationEngine: NavigationEngine,
     private val placesRepository: PlacesRepository,
     private val geminiRepository: GeminiRepository,
+    private val hapticFeedbackManager: HapticFeedbackManager,
     private val onSpeak: ((String, Boolean) -> Unit)? = null
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -24,6 +26,7 @@ class NavigationViewModelFactory(
                 navigationEngine = navigationEngine,
                 placesRepository = placesRepository,
                 geminiRepository = geminiRepository,
+                hapticFeedbackManager = hapticFeedbackManager,
                 onSpeak = onSpeak
             ) as T
         }

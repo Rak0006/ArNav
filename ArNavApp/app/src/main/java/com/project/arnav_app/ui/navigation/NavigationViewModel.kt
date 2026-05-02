@@ -3,6 +3,7 @@ package com.project.arnav_app.ui.navigation
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.project.arnav_app.core.haptics.HapticFeedbackManager
 import com.project.arnav_app.core.location.LocationProvider
 import com.project.arnav_app.core.navigation.*
 import kotlinx.coroutines.*
@@ -17,6 +18,7 @@ class NavigationViewModel(
     private val navigationEngine: NavigationEngine,
     private val placesRepository: PlacesRepository,
     private val geminiRepository: GeminiRepository,
+    private val hapticFeedbackManager: HapticFeedbackManager,
     private val onSpeak: ((String, Boolean) -> Unit)? = null
 ) : ViewModel() {
 
@@ -136,6 +138,7 @@ class NavigationViewModel(
             }
 
             _systemState.value = NavSystemState.PROCESSING
+            hapticFeedbackManager.playProcessingAcknowledgement()
             val result = callGemini(text)
             Log.d(TAG, "Parsed -> intent: ${result.intent}")
 
@@ -164,6 +167,7 @@ class NavigationViewModel(
         return try {
             geminiRepository.classifyIntent(text)
         } catch (e: Exception) {
+            hapticFeedbackManager.playVoiceError()
             IntentResult("UNKNOWN")
         }
     }
@@ -266,6 +270,7 @@ class NavigationViewModel(
             
             pendingWaypoints = listOfNotNull(viaGeoPoint)
             _systemState.value = NavSystemState.CONFIRMING
+            hapticFeedbackManager.playConfirmationPrompt()
             
             val confirmationMsg = if (via != null && viaGeoPoint != null) {
                 "Do you want to go to $query via $via?"
@@ -282,12 +287,14 @@ class NavigationViewModel(
     private fun handleConfirmation(result: IntentResult) {
         when (result.intent) {
             "CONFIRM" -> {
+                hapticFeedbackManager.playConfirmationAccepted()
                 pendingGeoPoint?.let { geoPoint ->
                     _systemState.value = NavSystemState.PROCESSING
                     speak("Alright.", shouldListen = false)
                     
                     val waypoints = pendingWaypoints
                     android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        hapticFeedbackManager.playNavigationStart()
                         destinationProvider.setDestination(geoPoint, waypoints)
                         _systemState.value = NavSystemState.NAVIGATING
                     }, 600)
@@ -297,6 +304,7 @@ class NavigationViewModel(
                 pendingWaypoints = emptyList()
             }
             "CANCEL" -> {
+                hapticFeedbackManager.playConfirmationRejected()
                 speak("Navigation cancelled.")
                 _systemState.value = NavSystemState.IDLE
                 pendingGeoPoint = null
@@ -311,6 +319,7 @@ class NavigationViewModel(
     }
 
     private fun stopNavigation() {
+        hapticFeedbackManager.playNavigationStop()
         destinationProvider.setDestination(null, emptyList())
         _route.value = null
         _systemState.value = NavSystemState.IDLE
@@ -343,32 +352,62 @@ class NavigationViewModel(
                 delay(500)
                 route = directionsRepository.getRoute(origin, destination, waypoints)
             }
+            if (_route.value != null && route != null) {
+                hapticFeedbackManager.playRouteRecalculation()
+            }
             _route.value = route
             if (route != null) {
                 summarizeRouteOnce(route)
             } else {
                 _errorMessage.value = "Could not find route."
+                hapticFeedbackManager.playVoiceError()
                 speak("I couldn't find a walking route.")
                 _systemState.value = NavSystemState.ERROR
             }
         } catch (e: Exception) {
             _errorMessage.value = e.localizedMessage
+            hapticFeedbackManager.playVoiceError()
         } finally {
             isFetchingRoute.set(false)
         }
     }
 
+    private var hasPlayedTurnPrep = false
+    private var hasPlayedTurnNow = false
+
     private fun handleNavigationEvents(state: NavigationState) {
         if (state.isArrived && _systemState.value == NavSystemState.NAVIGATING) {
+            hapticFeedbackManager.playArrival()
             speak("You have arrived at your destination.")
             _systemState.value = NavSystemState.IDLE
             destinationProvider.setDestination(null, emptyList())
             routeSummaryCache = null
         }
         if (state.isOffRoute && state.currentLocation != null && state.destination != null && !isFetchingRoute.get()) {
+            hapticFeedbackManager.playOffRoute()
             speak("Off route. Recalculating.")
             recalculateRoute(state.currentLocation, state.destination)
         }
+
+        // Turn haptics
+        if (state.isNavigating && !state.isArrived) {
+            val dist = state.distanceToNextStep
+            if (dist <= 10f) { // Immediate
+                if (!hasPlayedTurnNow) {
+                    hapticFeedbackManager.playTurnNow()
+                    hasPlayedTurnNow = true
+                }
+            } else if (dist <= 30f) { // Preparation
+                if (!hasPlayedTurnPrep) {
+                    hapticFeedbackManager.playTurnPreparation()
+                    hasPlayedTurnPrep = true
+                }
+            } else {
+                hasPlayedTurnPrep = false
+                hasPlayedTurnNow = false
+            }
+        }
+
         if (!isSpeakingSummary && state.currentInstruction != lastInstruction && state.currentInstruction.isNotEmpty()) {
             lastInstruction = state.currentInstruction
             speak(state.currentInstruction)
@@ -380,6 +419,7 @@ class NavigationViewModel(
     }
 
     fun onOverlayTap() {
+        hapticFeedbackManager.playOverlayTap()
         val now = System.currentTimeMillis()
         if (now - lastLlmCallTime < 500) return // Debounce taps (500ms)
 
@@ -415,10 +455,12 @@ class NavigationViewModel(
     fun setListening(listening: Boolean) {
         _isListening.value = listening
         if (listening) {
+            hapticFeedbackManager.playListeningStart()
             _systemState.value = NavSystemState.LISTENING
             _partialText.value = ""
             resetSilenceTimer()
         } else if (_systemState.value == NavSystemState.LISTENING) {
+            hapticFeedbackManager.playListeningEnd()
             viewModelScope.launch {
                 delay(500)
                 if (_speechText.value.isEmpty() && _partialText.value.isEmpty()) {
@@ -442,17 +484,20 @@ class NavigationViewModel(
     }
 
     fun onSuggestionSelected(prediction: AutocompletePrediction) {
+        hapticFeedbackManager.playButtonPress()
         _searchQuery.value = prediction.getPrimaryText(null)?.toString() ?: ""
         _suggestions.value = emptyList()
         viewModelScope.launch {
             try {
                 val geoPoint = placesRepository.getPlaceCoordinates(prediction.placeId)
                 if (geoPoint != null) {
+                    hapticFeedbackManager.playNavigationStart()
                     destinationProvider.setDestination(geoPoint, emptyList())
                     _systemState.value = NavSystemState.NAVIGATING
                 }
             } catch (e: Exception) {
                 _errorMessage.value = "Failed to get location."
+                hapticFeedbackManager.playVoiceError()
             }
         }
     }

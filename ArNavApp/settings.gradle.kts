@@ -22,6 +22,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "ArNav-App"
+rootProject.name = "Marigo"
 include(":app")
  
