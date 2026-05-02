@@ -302,13 +302,13 @@ class NavigationViewModel(
             hapticFeedbackManager.playConfirmationPrompt()
             
             val confirmationMsg = if (via != null && viaGeoPoint != null) {
-                "Do you want to go to $query via $via?"
+                "Do you want to go to $query via $via? Proceed with a yes."
             } else {
-                "Do you want to go to $query?"
+                "Do you want to go to $query? Proceed with a yes."
             }
             speak(confirmationMsg, shouldListen = true)
         } else {
-            speak("I couldn't find $query. Please try another place.", shouldListen = true)
+            speak("I couldn't find $query. Please try another place. Proceed with a yes to retry.", shouldListen = true)
             _systemState.value = NavSystemState.IDLE
         }
     }

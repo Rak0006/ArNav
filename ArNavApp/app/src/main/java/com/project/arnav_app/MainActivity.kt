@@ -104,7 +104,19 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 val params = Bundle()
                 val utteranceId = if (shouldListen) "VOICE_LOOP" else "NORMAL"
                 params.putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
-                tts?.speak(text, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
+                
+                if (shouldListen) {
+                    // Split the text to speak the first part and start listening before finishing
+                    val splitIndex = text.indexOf("proceed with a yes", ignoreCase = true)
+                    if (splitIndex != -1) {
+                        val firstPart = text.substring(0, splitIndex + "proceed with a yes".length)
+                        tts?.speak(firstPart, TextToSpeech.QUEUE_FLUSH, params, "VOICE_LOOP_PARTIAL")
+                    } else {
+                        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
+                    }
+                } else {
+                    tts?.speak(text, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
+                }
             }
         )
 
@@ -336,7 +348,14 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         if (status == TextToSpeech.SUCCESS) {
             tts?.language = Locale.US
             tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                override fun onStart(utteranceId: String?) {}
+                override fun onStart(utteranceId: String?) {
+                    if (utteranceId == "VOICE_LOOP_PARTIAL") {
+                        // For overlapping: start listening as soon as the critical part starts or shortly after
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            if (shouldAutoListen) startListening()
+                        }, 1000) // Small delay to let the initial part play
+                    }
+                }
                 override fun onDone(utteranceId: String?) {
                     if (utteranceId == "VOICE_LOOP") {
                         if (!shouldAutoListen) return

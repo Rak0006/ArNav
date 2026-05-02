@@ -162,28 +162,36 @@ class PerceptionEngine(private val context: Context) : ImageAnalysis.Analyzer {
         val labels = listOf("person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat", "traffic light", "fire hydrant", "stop sign", "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove", "skateboard", "surfboard", "tennis racket", "bottle", "wine glass", "cup", "fork", "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange", "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair", "couch", "potted plant", "bed", "dining table", "toilet", "tv", "laptop", "mouse", "remote", "keyboard", "cell phone", "microwave", "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush")
 
         for (i in 0 until count) {
-            if (scores[i] < 0.5f) continue
+            if (scores[i] < 0.45f) continue // Slightly more sensitive to catch barriers
             
             val classId = classes[i].toInt()
-            // MobileNet SSD COCO classes: 0: person, 2: car, 3: motorcycle, 6: bus, 8: truck
-            val isObstacle = classId == 0 || classId == 2 || classId == 3 || classId == 6 || classId == 8
             
             // bbox: [top, left, bottom, right]
             val top = locations[i][0]
             val left = locations[i][1]
             val bottom = locations[i][2]
             val right = locations[i][3]
+            
+            val width = right - left
+            val height = bottom - top
+            val centerX = (left + right) / 2f
 
             val label = if (classId in labels.indices) labels[classId] else "unknown"
             currentDetections.add(Detection(RectF(left, top, right, bottom), label, scores[i]))
 
-            if (!isObstacle) continue
+            // 1. Known Whitelist: People, Vehicles, and common urban barriers
+            val isWhitelisted = classId in listOf(0, 1, 2, 3, 5, 7, 10, 11, 13, 56, 60) 
+            
+            // 2. Generic Barrier Logic: If any object (even "unknown") is extremely large in center
+            // This catches walls, fences, or large furniture misclassified by SSD
+            val isLargeGenericObstacle = (width > 0.6f || height > 0.6f) && (centerX > 0.2f && centerX < 0.8f)
 
-            // ROI: Ignore objects outside the horizontal center 70%
-            val centerX = (left + right) / 2f
-            if (centerX < 0.15f || centerX > 0.85f) continue
+            if (!isWhitelisted && !isLargeGenericObstacle) continue
 
-            val width = right - left
+            // ROI: Ignore small whitelisted objects outside the horizontal center 70%
+            // But allow "Large Generic Obstacles" to pass ROI checks since they are likely unavoidable
+            if (!isLargeGenericObstacle && (centerX < 0.15f || centerX > 0.85f)) continue
+
             val risk = calculateRisk(width)
             
             if (risk.ordinal > frameHighestRisk.ordinal) {

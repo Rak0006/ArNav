@@ -74,7 +74,16 @@ data class NavigationState(
         else "${"%.1f".format(it.totalDistanceMeters / 1000.0)} km" 
     } ?: "0 m"
 
-    val eta: String get() = route?.let { "${it.totalDurationSeconds / 60} min" } ?: "0 min"
+    val eta: String get() = route?.let { 
+        val totalMinutes = it.totalDurationSeconds / 60
+        if (totalMinutes < 60) {
+            "$totalMinutes min"
+        } else {
+            val hours = totalMinutes / 60
+            val minutes = totalMinutes % 60
+            if (minutes == 0) "${hours}h" else "${hours}h ${minutes}m"
+        }
+    } ?: "0 min"
 
     private fun calculateDistance(a: GeoPoint, b: GeoPoint): Double {
         val r = 6371000.0
