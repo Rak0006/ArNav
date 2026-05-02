@@ -23,6 +23,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.border
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.camera.view.PreviewView
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
@@ -34,11 +37,18 @@ import com.google.android.gms.maps.model.LatLng
 import com.google.android.libraries.places.api.model.AutocompletePrediction
 import com.project.arnav_app.core.navigation.NavSystemState
 import com.project.arnav_app.core.navigation.NavigationState
-import com.project.arnav_app.ui.map.MapView
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import com.project.arnav_app.core.perception.Detection
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.shape.CircleShape
 
 @Composable
 fun NavigationScreen(
     state: NavigationState,
+    obstacleRisk: ObstacleRisk,
+    detections: List<Detection> = emptyList(),
     searchQuery: String,
     suggestions: List<AutocompletePrediction>,
     speechText: String,
@@ -52,6 +62,7 @@ fun NavigationScreen(
     onOverlayTap: () -> Unit,
     onClearText: () -> Unit,
     isTestMode: Boolean,
+    onPreviewViewReady: (PreviewView) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Box(modifier = modifier.fillMaxSize().background(Color(0xFF0F0F0F))) {
@@ -62,7 +73,7 @@ fun NavigationScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(0.5f)
+                    .weight(0.66f)
             ) {
                 val location = state.currentLocation
                 if (location != null && location.latitude != 0.0) {
@@ -92,24 +103,118 @@ fun NavigationScreen(
                     }
                 }
 
-                // Search Bar Overlay (Passive)
-                SearchSection(
-                    query = searchQuery,
-                    suggestions = suggestions,
-                    onQueryChange = onSearchQueryChanged,
-                    onSuggestionClick = onSuggestionSelected,
-                    onSearch = onSearchClicked,
+                // Search Bar & Location Button Overlay
+                Column(
                     modifier = Modifier
+                        .fillMaxWidth()
                         .statusBarsPadding()
-                        .padding(16.dp)
-                )
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    SearchSection(
+                        query = searchQuery,
+                        suggestions = suggestions,
+                        onQueryChange = onSearchQueryChanged,
+                        onSuggestionClick = onSuggestionSelected,
+                        onSearch = onSearchClicked
+                    )
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    IconButton(
+                        onClick = {
+                            // Recenter map
+                        },
+                        modifier = Modifier
+                            .align(Alignment.End)
+                            .size(44.dp)
+                            .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MyLocation,
+                            contentDescription = "My Location",
+                            tint = Color(0xFF00C853)
+                        )
+                    }
+                }
+
+                // 🎥 Camera PIP (Yellow Area from Image)
+                val borderColor = when (obstacleRisk) {
+                    ObstacleRisk.HIGH -> Color(0xFFFF1744) // Red
+                    ObstacleRisk.MEDIUM -> Color(0xFFFFAB00) // Amber
+                    else -> Color(0xFF00C853) // Green (LOW and others)
+                }
+
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart) // ✅ anchor to bottom-left
+                        .padding(start = 16.dp, bottom = 16.dp)
+                        .size(120.dp, 160.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color.Black.copy(alpha = 0.6f))
+                        .border(2.dp, borderColor, RoundedCornerShape(16.dp))
+                ) {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        AndroidView(
+                            factory = { context ->
+                                PreviewView(context).apply {
+                                    scaleType = PreviewView.ScaleType.FILL_CENTER
+                                    implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+                                    onPreviewViewReady(this)
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+
+                        Canvas(modifier = Modifier.matchParentSize()) {
+                            val w = size.width
+                            val h = size.height
+
+                            detections.forEach { det ->
+                                val left = det.box.left * w
+                                val top = det.box.top * h
+                                val right = det.box.right * w
+                                val bottom = det.box.bottom * h
+
+                                drawRect(
+                                    color = Color.Red,
+                                    topLeft = Offset(left, top),
+                                    size = Size(right - left, bottom - top),
+                                    style = Stroke(width = 2.dp.toPx())
+                                )
+                            }
+                        }
+                    }
+
+                    if (obstacleRisk != ObstacleRisk.LOW) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(borderColor.copy(alpha = 0.1f)),
+                            contentAlignment = Alignment.TopCenter
+                        ) {
+                            Surface(
+                                color = borderColor,
+                                shape = RoundedCornerShape(bottomStart = 8.dp, bottomEnd = 8.dp),
+                                modifier = Modifier.padding(horizontal = 8.dp)
+                            ) {
+                                Text(
+                                    text = if (obstacleRisk == ObstacleRisk.HIGH) "HIGH RISK" else "WARNING",
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+                }
             }
 
             // 2. MIDDLE (40%) -> TOUCH OVERLAY (PRIMARY INPUT)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(0.4f)
+                    .weight(0.22f)
                     .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
                     .background(
                         Brush.verticalGradient(

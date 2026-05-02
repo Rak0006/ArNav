@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.project.arnav_app.core.haptics.HapticFeedbackManager
 import com.project.arnav_app.core.location.LocationProvider
 import com.project.arnav_app.core.navigation.*
+import com.project.arnav_app.core.perception.ObstacleRisk
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import com.google.android.libraries.places.api.model.AutocompletePrediction
@@ -49,6 +50,12 @@ class NavigationViewModel(
     private var pendingDestination: String? = null
     private var pendingGeoPoint: GeoPoint? = null
 
+    private var _obstacleRisk = MutableStateFlow(ObstacleRisk.LOW)
+    val obstacleRisk = _obstacleRisk.asStateFlow()
+
+    private val _detections = MutableStateFlow<List<com.project.arnav_app.core.perception.Detection>>(emptyList())
+    val detections = _detections.asStateFlow()
+
     private var routeSummaryCache: String? = null
     private var lastLlmCallTime = 0L
     private val MIN_LLM_INTERVAL = 2000L
@@ -74,6 +81,19 @@ class NavigationViewModel(
 
     init {
         observeDestinationChanges()
+    }
+
+    fun observeObstacleRisk(riskFlow: SharedFlow<ObstacleRisk>) {
+        viewModelScope.launch {
+            riskFlow.collect { risk ->
+                _obstacleRisk.value = risk
+                when (risk) {
+                    ObstacleRisk.HIGH -> hapticFeedbackManager.playObstacleHigh()
+                    ObstacleRisk.MEDIUM -> hapticFeedbackManager.playObstacleMedium()
+                    ObstacleRisk.LOW -> {} 
+                }
+            }
+        }
     }
 
     private var pendingWaypoints: List<GeoPoint> = emptyList()

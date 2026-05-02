@@ -66,7 +66,7 @@ fun MapView(
     val uiSettings = remember {
         MapUiSettings(
             zoomControlsEnabled = true,
-            myLocationButtonEnabled = hasLocationPermission
+            myLocationButtonEnabled = false
         )
     }
     

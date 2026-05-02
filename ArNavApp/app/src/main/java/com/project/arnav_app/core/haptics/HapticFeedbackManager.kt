@@ -125,4 +125,16 @@ class HapticFeedbackManager(context: Context) {
         val effect = VibrationEffect.createOneShot(150, 160)
         vibrate(effect, HapticPriority.LOW)
     }
+
+    // --- Perception / Obstacle ---
+
+    fun playObstacleMedium() {
+        val effect = VibrationEffect.createWaveform(longArrayOf(0, 100, 50, 100), -1)
+        vibrate(effect, HapticPriority.MEDIUM)
+    }
+
+    fun playObstacleHigh() {
+        val effect = VibrationEffect.createWaveform(longArrayOf(0, 200, 50, 200, 50, 200), -1)
+        vibrate(effect, HapticPriority.HIGH)
+    }
 }

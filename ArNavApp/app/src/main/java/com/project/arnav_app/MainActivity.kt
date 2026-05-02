@@ -22,6 +22,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
@@ -29,6 +31,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -37,6 +40,14 @@ import com.project.arnav_app.ui.navigation.NavigationViewModel
 import com.project.arnav_app.ui.navigation.NavigationViewModelFactory
 import com.project.arnav_app.ui.theme.MarigoTheme
 import com.project.arnav_app.core.navigation.*
+import com.project.arnav_app.core.perception.PerceptionEngine
+import com.project.arnav_app.core.perception.PerceptionLogger
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -53,6 +64,16 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private var sttRetryCount = 0
     private val MAX_STT_RETRIES = 3
     private var shouldAutoListen = false
+    private lateinit var cameraExecutor: ExecutorService
+    private var perceptionEngine: PerceptionEngine? = null
+    private var previewView: PreviewView? = null
+
+    private val cameraPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (!granted) {
+                Toast.makeText(this, "Camera permission is required for obstacle detection", Toast.LENGTH_LONG).show()
+            }
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -68,15 +89,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         
         val placesRepository = PlacesRepository(applicationContext)
         val geminiRepository = GeminiRepository("AIzaSyCwplM9R4UcvF6WQZ_4C6SdGSnLTqhrDvE")
-        val directionsRepository = DirectionsRepository(
-            Retrofit.Builder()
-                .baseUrl("https://maps.googleapis.com/")
-                .client(OkHttpClient.Builder().addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BODY }).build())
-                .addConverterFactory(Json { ignoreUnknownKeys = true }.asConverterFactory("application/json".toMediaType()))
-                .build()
-                .create(DirectionsApiService::class.java),
-            apiKey
-        )
+        val directionsRepository = createDirectionsRepository()
 
         val factory = NavigationViewModelFactory(
             locationProvider = com.project.arnav_app.core.location.DefaultLocationProvider(applicationContext),
@@ -95,6 +108,9 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             }
         )
 
+        cameraExecutor = Executors.newSingleThreadExecutor()
+        perceptionEngine = PerceptionEngine(applicationContext)
+
         setContent {
             MarigoTheme {
                 val viewModel: NavigationViewModel = viewModel(factory = factory)
@@ -104,6 +120,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 val speechText by viewModel.speechText.collectAsState()
                 val partialText by viewModel.partialText.collectAsState()
                 val isListening by viewModel.isListening.collectAsState()
+                val obstacleRisk by viewModel.obstacleRisk.collectAsState()
 
                 val permissionLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -111,23 +128,40 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     val granted = permissions.values.all { it }
                     if (!granted) {
                         Toast.makeText(this@MainActivity, "Permissions needed", Toast.LENGTH_LONG).show()
+                    } else {
+                        // All permissions granted including camera
+                        startCamera(viewModel)
                     }
                 }
 
                 LaunchedEffect(Unit) {
                     val permissions = arrayOf(
                         Manifest.permission.RECORD_AUDIO,
-                        Manifest.permission.ACCESS_FINE_LOCATION
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.CAMERA
                     )
-                    if (permissions.any { ContextCompat.checkSelfPermission(this@MainActivity, it) != PackageManager.PERMISSION_GRANTED }) {
-                        permissionLauncher.launch(permissions)
+                    
+                    val missingPermissions = permissions.filter { 
+                        ContextCompat.checkSelfPermission(this@MainActivity, it) != PackageManager.PERMISSION_GRANTED 
                     }
+
+                    if (missingPermissions.isNotEmpty()) {
+                        permissionLauncher.launch(missingPermissions.toTypedArray())
+                    } else {
+                        startCamera(viewModel)
+                    }
+
                     initializeSpeechRecognizer(viewModel)
+                    perceptionEngine?.let { viewModel.observeObstacleRisk(it.riskEvents) }
                 }
 
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+                Scaffold(
+                    modifier = Modifier.fillMaxSize(),
+                    contentWindowInsets = WindowInsets(0, 0, 0, 0)
+                ) { innerPadding ->
                     NavigationScreen(
                         state = uiState,
+                        obstacleRisk = obstacleRisk,
                         searchQuery = searchQuery,
                         suggestions = suggestions,
                         speechText = speechText,
@@ -148,11 +182,63 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                         },
                         onClearText = { viewModel.clearText() },
                         isTestMode = viewModel.isTestMode,
-                        modifier = Modifier.padding(innerPadding)
+                        onPreviewViewReady = { preview ->
+                            previewView = preview
+                            startCamera(viewModel)
+                        },
+                        modifier = Modifier.fillMaxSize()
                     )
                 }
             }
         }
+    }
+
+    private fun createDirectionsRepository(): DirectionsRepository {
+        val apiKey = "AIzaSyA-H9sCG0f14XtInSdBvnYjcJcY56-RTGY"
+        return DirectionsRepository(
+            Retrofit.Builder()
+                .baseUrl("https://maps.googleapis.com/")
+                .client(OkHttpClient.Builder().addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BODY }).build())
+                .addConverterFactory(Json { ignoreUnknownKeys = true }.asConverterFactory("application/json".toMediaType()))
+                .build()
+                .create(DirectionsApiService::class.java),
+            apiKey
+        )
+    }
+
+    private fun startCamera(viewModel: NavigationViewModel) {
+        val view = previewView ?: return
+        
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+        cameraProviderFuture.addListener({
+            try {
+                val cameraProvider = cameraProviderFuture.get()
+                
+                val preview = Preview.Builder()
+                    .build()
+                    .also {
+                        it.setSurfaceProvider(view.surfaceProvider)
+                    }
+
+                val imageAnalysis = androidx.camera.core.ImageAnalysis.Builder()
+                    .setBackpressureStrategy(androidx.camera.core.ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .build()
+                    .also {
+                        perceptionEngine?.let { engine ->
+                            it.setAnalyzer(cameraExecutor, engine)
+                        }
+                    }
+
+                val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+
+                cameraProvider.unbindAll()
+                cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageAnalysis)
+                PerceptionLogger.cameraStarted()
+            } catch (e: Exception) {
+                PerceptionLogger.cameraError(e)
+                Log.e("MainActivity", "Use case binding failed", e)
+            }
+        }, ContextCompat.getMainExecutor(this))
     }
 
     private fun initializeSpeechRecognizer(viewModel: NavigationViewModel) {
@@ -263,9 +349,17 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     override fun onDestroy() {
         tts?.stop()
         tts?.shutdown()
-        if (::speechRecognizer.isInitialized) {
+        
+        if (this::speechRecognizer.isInitialized) {
             speechRecognizer.destroy()
         }
+        
+        perceptionEngine?.close()
+        
+        if (this::cameraExecutor.isInitialized) {
+            cameraExecutor.shutdown()
+        }
+
         super.onDestroy()
     }
 }
