@@ -52,6 +52,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private lateinit var speechRecognizer: SpeechRecognizer
     private var sttRetryCount = 0
     private val MAX_STT_RETRIES = 3
+    private var shouldAutoListen = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -86,6 +87,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             geminiRepository = geminiRepository,
             hapticFeedbackManager = com.project.arnav_app.core.haptics.HapticFeedbackManager(applicationContext),
             onSpeak = { text, shouldListen ->
+                shouldAutoListen = shouldListen
                 val params = Bundle()
                 val utteranceId = if (shouldListen) "VOICE_LOOP" else "NORMAL"
                 params.putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
@@ -246,6 +248,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 override fun onStart(utteranceId: String?) {}
                 override fun onDone(utteranceId: String?) {
                     if (utteranceId == "VOICE_LOOP") {
+                        if (!shouldAutoListen) return
                         Handler(Looper.getMainLooper()).postDelayed({
                             startListening()
                         }, 500)

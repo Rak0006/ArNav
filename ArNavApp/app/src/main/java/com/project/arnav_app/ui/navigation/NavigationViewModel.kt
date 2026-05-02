@@ -229,7 +229,10 @@ class NavigationViewModel(
     }
 
     private suspend fun summarizeRouteOnce(route: Route) {
-        if (routeSummaryCache != null) return
+        if (routeSummaryCache != null) {
+            isSpeakingSummary = false
+            return
+        }
         isSpeakingSummary = true
         
         val distance = "%.1f".format(route.totalDistanceMeters / 1000.0)
@@ -239,7 +242,7 @@ class NavigationViewModel(
         val summary = geminiRepository.summarizeRoute(distance, eta, steps) ?: "The route is $distance km and will take about $eta minutes."
         routeSummaryCache = summary
         speak(summary)
-        delay(1500)
+        delay(6000) // Increased delay to prevent instructions from cutting off summary
         isSpeakingSummary = false
     }
 
@@ -355,10 +358,16 @@ class NavigationViewModel(
             if (_route.value != null && route != null) {
                 hapticFeedbackManager.playRouteRecalculation()
             }
-            _route.value = route
+            
             if (route != null) {
+                // Set isSpeakingSummary to true BEFORE updating _route.value to block initial navigation instructions
+                if (routeSummaryCache == null) {
+                    isSpeakingSummary = true
+                }
+                _route.value = route
                 summarizeRouteOnce(route)
             } else {
+                _route.value = null
                 _errorMessage.value = "Could not find route."
                 hapticFeedbackManager.playVoiceError()
                 speak("I couldn't find a walking route.")
