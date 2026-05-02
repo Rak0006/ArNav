@@ -1,5 +1,18 @@
 package com.project.arnav_app.core.navigation
 
+import kotlinx.serialization.Serializable
+
+@Serializable
+data class IntentResult(
+    val intent: String,
+    val destination: String? = null,
+    val query: String? = null
+)
+
+enum class NavSystemState {
+    IDLE, LISTENING, PROCESSING, CONFIRMING, NAVIGATING, ERROR
+}
+
 data class GeoPoint(
     val latitude: Double,
     val longitude: Double,
@@ -22,6 +35,7 @@ data class Route(
 )
 
 data class NavigationState(
+    val systemState: NavSystemState = NavSystemState.IDLE,
     val route: Route? = null,
     val currentLocation: GeoPoint? = null,
     val destination: GeoPoint? = null,

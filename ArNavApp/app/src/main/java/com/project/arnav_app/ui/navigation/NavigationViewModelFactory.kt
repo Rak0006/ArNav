@@ -3,10 +3,7 @@ package com.project.arnav_app.ui.navigation
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.project.arnav_app.core.location.LocationProvider
-import com.project.arnav_app.core.navigation.DestinationProvider
-import com.project.arnav_app.core.navigation.DirectionsRepository
-import com.project.arnav_app.core.navigation.NavigationEngine
-import com.project.arnav_app.core.navigation.PlacesRepository
+import com.project.arnav_app.core.navigation.*
 
 class NavigationViewModelFactory(
     private val locationProvider: LocationProvider,
@@ -14,7 +11,8 @@ class NavigationViewModelFactory(
     private val directionsRepository: DirectionsRepository,
     private val navigationEngine: NavigationEngine,
     private val placesRepository: PlacesRepository,
-    private val onSpeak: ((String) -> Unit)? = null
+    private val geminiRepository: GeminiRepository,
+    private val onSpeak: ((String, Boolean) -> Unit)? = null
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(NavigationViewModel::class.java)) {
@@ -25,6 +23,7 @@ class NavigationViewModelFactory(
                 directionsRepository = directionsRepository,
                 navigationEngine = navigationEngine,
                 placesRepository = placesRepository,
+                geminiRepository = geminiRepository,
                 onSpeak = onSpeak
             ) as T
         }

@@ -26,15 +26,19 @@ class PlacesRepository(context: Context) {
     }
 
     suspend fun searchPlaceByText(query: String): GeoPoint? {
-        // Note: SearchByText requires Places API (New) to be enabled in Cloud Console
-        val placeFields = listOf(Place.Field.LAT_LNG)
-        val request = SearchByTextRequest.builder(query, placeFields).build()
+        val request = FindAutocompletePredictionsRequest.builder()
+            .setQuery(query)
+            .build()
         return try {
-            val response: SearchByTextResponse = placesClient.searchByText(request).await()
-            val firstPlace = response.places.firstOrNull()
-            firstPlace?.latLng?.let { GeoPoint(it.latitude, it.longitude) }
+            val response = placesClient.findAutocompletePredictions(request).await()
+            val firstPrediction = response.autocompletePredictions.firstOrNull()
+            if (firstPrediction != null) {
+                getPlaceCoordinates(firstPrediction.placeId)
+            } else {
+                null
+            }
         } catch (e: Exception) {
-            Log.e("PlacesRepo", "SearchByText error: ${e.message}")
+            Log.e("PlacesRepo", "Search error via Autocomplete: ${e.message}")
             null
         }
     }
