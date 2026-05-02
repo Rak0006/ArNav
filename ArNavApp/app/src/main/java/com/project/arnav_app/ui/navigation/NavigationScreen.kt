@@ -88,7 +88,7 @@ fun NavigationScreen(
                         modifier = Modifier.fillMaxSize().background(Color(0xFF1A1A1A)),
                         contentAlignment = Alignment.Center
                     ) {
-                        CircularProgressIndicator(color = Color(0xFFE91E63))
+                        CircularProgressIndicator(color = Color(0xFF00C853))
                     }
                 }
 
@@ -118,7 +118,7 @@ fun NavigationScreen(
                     )
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
-                        indication = rememberRipple(bounded = true, color = Color(0xFFE91E63)),
+                        indication = rememberRipple(bounded = true, color = Color(0xFF00C853)),
                         onClick = onOverlayTap
                     ),
                 contentAlignment = Alignment.Center
@@ -199,7 +199,7 @@ fun OverlayContent(state: NavigationState, partialText: String, isTestMode: Bool
                 )
             }
             NavSystemState.PROCESSING -> {
-                CircularProgressIndicator(color = Color(0xFFE91E63))
+                CircularProgressIndicator(color = Color(0xFF00C853))
                 Spacer(modifier = Modifier.height(16.dp))
                 Text("Processing...", color = Color.Gray)
             }
@@ -210,7 +210,7 @@ fun OverlayContent(state: NavigationState, partialText: String, isTestMode: Bool
                     shape = RoundedCornerShape(16.dp)
                 ) {
                     Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Route Summary", fontWeight = FontWeight.Bold, color = Color(0xFFE91E63))
+                        Text("Route Summary", fontWeight = FontWeight.Bold, color = Color(0xFF00C853))
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = if (state.errorMessage != null) state.errorMessage!! else "Confirming your destination...",
@@ -226,7 +226,7 @@ fun OverlayContent(state: NavigationState, partialText: String, isTestMode: Bool
                     modifier = Modifier.fillMaxWidth().fillMaxHeight().padding(4.dp),
                     colors = CardDefaults.cardColors(containerColor = Color(0xFF1A0A1A)),
                     shape = RoundedCornerShape(20.dp),
-                    border = CardDefaults.outlinedCardBorder().copy(brush = Brush.linearGradient(listOf(Color(0xFFE91E63), Color(0xFF9C27B0))))
+                    border = CardDefaults.outlinedCardBorder().copy(brush = Brush.linearGradient(listOf(Color(0xFF00C853), Color(0xFF9C27B0))))
                 ) {
                     Column(
                         modifier = Modifier.fillMaxSize().padding(20.dp),

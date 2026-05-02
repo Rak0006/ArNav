@@ -7,11 +7,15 @@ class DirectionsRepository(
     private val apiService: DirectionsApiService,
     private val apiKey: String
 ) {
-    suspend fun getRoute(origin: GeoPoint, destination: GeoPoint): Route? {
+    suspend fun getRoute(origin: GeoPoint, destination: GeoPoint, waypoints: List<GeoPoint> = emptyList()): Route? {
         return try {
             val originStr = "${origin.latitude},${origin.longitude}"
             val destStr = "${destination.latitude},${destination.longitude}"
-            val response = apiService.getDirections(originStr, destStr, "walking", apiKey)
+            val waypointsStr = if (waypoints.isNotEmpty()) {
+                "optimize:true|" + waypoints.joinToString("|") { "${it.latitude},${it.longitude}" }
+            } else null
+            
+            val response = apiService.getDirections(originStr, destStr, waypointsStr, "walking", apiKey)
             
             if (response.status == "OK" && response.routes.isNotEmpty()) {
                 val directionsRoute = response.routes[0]

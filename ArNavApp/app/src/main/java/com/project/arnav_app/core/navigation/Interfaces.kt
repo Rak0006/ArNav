@@ -4,7 +4,8 @@ import kotlinx.coroutines.flow.Flow
 
 interface DestinationProvider {
     val destinationFlow: Flow<GeoPoint?>
-    fun setDestination(destination: GeoPoint?)
+    val waypointsFlow: Flow<List<GeoPoint>>
+    fun setDestination(destination: GeoPoint?, waypoints: List<GeoPoint> = emptyList())
 }
 
 interface NavigationEngine {

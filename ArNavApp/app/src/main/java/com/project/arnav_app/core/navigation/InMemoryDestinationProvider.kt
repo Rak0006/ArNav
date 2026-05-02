@@ -8,7 +8,11 @@ class InMemoryDestinationProvider : DestinationProvider {
     private val _destinationFlow = MutableStateFlow<GeoPoint?>(null)
     override val destinationFlow: Flow<GeoPoint?> = _destinationFlow.asStateFlow()
 
-    override fun setDestination(destination: GeoPoint?) {
+    private val _waypointsFlow = MutableStateFlow<List<GeoPoint>>(emptyList())
+    override val waypointsFlow: Flow<List<GeoPoint>> = _waypointsFlow.asStateFlow()
+
+    override fun setDestination(destination: GeoPoint?, waypoints: List<GeoPoint>) {
         _destinationFlow.value = destination
+        _waypointsFlow.value = waypoints
     }
 }

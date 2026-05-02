@@ -42,6 +42,7 @@ class NavigationViewModel(
     val suggestions = _suggestions.asStateFlow()
 
     private val isFetchingRoute = AtomicBoolean(false)
+    private var isSpeakingSummary = false
     private var lastInstruction: String? = null
     private var pendingDestination: String? = null
     private var pendingGeoPoint: GeoPoint? = null
@@ -73,23 +74,29 @@ class NavigationViewModel(
         observeDestinationChanges()
     }
 
+    private var pendingWaypoints: List<GeoPoint> = emptyList()
+    private var currentWaypoints: List<GeoPoint> = emptyList()
+
     private fun observeDestinationChanges() {
         viewModelScope.launch {
             combine(
                 destinationProvider.destinationFlow,
+                destinationProvider.waypointsFlow,
                 locationProvider.locationFlow.filter { it.latitude != 0.0 }
-            ) { dest, loc ->
-                if (dest != null) GeoPoint(loc.latitude, loc.longitude) to dest else null
-            }.collect { pair ->
-                if (pair != null) {
-                    val (location, destination) = pair
+            ) { dest, waypoints, loc ->
+                if (dest != null) Triple(GeoPoint(loc.latitude, loc.longitude), dest, waypoints) else null
+            }.collect { triple ->
+                if (triple != null) {
+                    val (location, destination, waypoints) = triple
                     if (_route.value == null && !isFetchingRoute.get()) {
-                        fetchRoute(location, destination)
+                        currentWaypoints = waypoints
+                        fetchRoute(location, destination, waypoints)
                     }
                 } else {
                     _route.value = null
                     _systemState.value = NavSystemState.IDLE
                     routeSummaryCache = null
+                    currentWaypoints = emptyList()
                 }
             }
         }
@@ -163,13 +170,18 @@ class NavigationViewModel(
 
     private suspend fun handleIntent(result: IntentResult) {
         when (result.intent) {
-            "NAVIGATE" -> {
+            "NAVIGATE", "NAVIGATE_VIA" -> {
                 val dest = result.destination
-                if (dest != null) findAndConfirmDestination(dest)
+                val via = result.via
+                if (dest != null) findAndConfirmDestination(dest, via)
                 else {
                     speak("Where would you like to go?", shouldListen = true)
                     _systemState.value = NavSystemState.IDLE
                 }
+            }
+            "ALTERNATIVE_ROUTE" -> {
+                speak("Searching for an alternative route.", shouldListen = false)
+                // Logic to trigger alternative route could be added here
             }
             "QUERY" -> {
                 handleQueryIntent(result.query ?: speechText.value)
@@ -214,6 +226,7 @@ class NavigationViewModel(
 
     private suspend fun summarizeRouteOnce(route: Route) {
         if (routeSummaryCache != null) return
+        isSpeakingSummary = true
         
         val distance = "%.1f".format(route.totalDistanceMeters / 1000.0)
         val eta = (route.totalDurationSeconds / 60).toString()
@@ -222,11 +235,14 @@ class NavigationViewModel(
         val summary = geminiRepository.summarizeRoute(distance, eta, steps) ?: "The route is $distance km and will take about $eta minutes."
         routeSummaryCache = summary
         speak(summary)
+        delay(1500)
+        isSpeakingSummary = false
     }
 
-    private suspend fun findAndConfirmDestination(query: String) {
+    private suspend fun findAndConfirmDestination(query: String, via: String? = null) {
         _systemState.value = NavSystemState.PROCESSING
-        val geoPoint = try {
+        
+        val destGeoPoint = try {
             placesRepository.searchPlaceByText(query) ?: run {
                 val suggestions = placesRepository.getAutocompleteSuggestions(query)
                 if (suggestions.isNotEmpty()) placesRepository.getPlaceCoordinates(suggestions[0].placeId)
@@ -234,11 +250,29 @@ class NavigationViewModel(
             }
         } catch (e: Exception) { null }
 
-        if (geoPoint != null) {
-            pendingGeoPoint = geoPoint
+        if (destGeoPoint != null) {
+            pendingGeoPoint = destGeoPoint
             pendingDestination = query
+            
+            val viaGeoPoint = via?.let {
+                try {
+                    placesRepository.searchPlaceByText(it) ?: run {
+                        val suggestions = placesRepository.getAutocompleteSuggestions(it)
+                        if (suggestions.isNotEmpty()) placesRepository.getPlaceCoordinates(suggestions[0].placeId)
+                        else null
+                    }
+                } catch (e: Exception) { null }
+            }
+            
+            pendingWaypoints = listOfNotNull(viaGeoPoint)
             _systemState.value = NavSystemState.CONFIRMING
-            speak("Do you want to go to $query?", shouldListen = true)
+            
+            val confirmationMsg = if (via != null && viaGeoPoint != null) {
+                "Do you want to go to $query via $via?"
+            } else {
+                "Do you want to go to $query?"
+            }
+            speak(confirmationMsg, shouldListen = true)
         } else {
             speak("I couldn't find $query. Please try another place.", shouldListen = true)
             _systemState.value = NavSystemState.IDLE
@@ -248,19 +282,26 @@ class NavigationViewModel(
     private fun handleConfirmation(result: IntentResult) {
         when (result.intent) {
             "CONFIRM" -> {
-                pendingGeoPoint?.let {
-                    speak("Alright.")
-                    destinationProvider.setDestination(it)
-                    _systemState.value = NavSystemState.NAVIGATING
+                pendingGeoPoint?.let { geoPoint ->
+                    _systemState.value = NavSystemState.PROCESSING
+                    speak("Alright.", shouldListen = false)
+                    
+                    val waypoints = pendingWaypoints
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        destinationProvider.setDestination(geoPoint, waypoints)
+                        _systemState.value = NavSystemState.NAVIGATING
+                    }, 600)
                 }
                 pendingGeoPoint = null
                 pendingDestination = null
+                pendingWaypoints = emptyList()
             }
             "CANCEL" -> {
                 speak("Navigation cancelled.")
                 _systemState.value = NavSystemState.IDLE
                 pendingGeoPoint = null
                 pendingDestination = null
+                pendingWaypoints = emptyList()
                 routeSummaryCache = null
             }
             else -> {
@@ -270,7 +311,7 @@ class NavigationViewModel(
     }
 
     private fun stopNavigation() {
-        destinationProvider.setDestination(null)
+        destinationProvider.setDestination(null, emptyList())
         _route.value = null
         _systemState.value = NavSystemState.IDLE
         routeSummaryCache = null
@@ -294,13 +335,13 @@ class NavigationViewModel(
         }
     }
 
-    private suspend fun fetchRoute(origin: GeoPoint, destination: GeoPoint) {
+    private suspend fun fetchRoute(origin: GeoPoint, destination: GeoPoint, waypoints: List<GeoPoint> = emptyList()) {
         if (isFetchingRoute.getAndSet(true)) return
         try {
-            var route = directionsRepository.getRoute(origin, destination)
+            var route = directionsRepository.getRoute(origin, destination, waypoints)
             if (route == null) {
                 delay(500)
-                route = directionsRepository.getRoute(origin, destination)
+                route = directionsRepository.getRoute(origin, destination, waypoints)
             }
             _route.value = route
             if (route != null) {
@@ -321,21 +362,21 @@ class NavigationViewModel(
         if (state.isArrived && _systemState.value == NavSystemState.NAVIGATING) {
             speak("You have arrived at your destination.")
             _systemState.value = NavSystemState.IDLE
-            destinationProvider.setDestination(null)
+            destinationProvider.setDestination(null, emptyList())
             routeSummaryCache = null
         }
         if (state.isOffRoute && state.currentLocation != null && state.destination != null && !isFetchingRoute.get()) {
             speak("Off route. Recalculating.")
             recalculateRoute(state.currentLocation, state.destination)
         }
-        if (state.currentInstruction != lastInstruction && state.currentInstruction.isNotEmpty()) {
+        if (!isSpeakingSummary && state.currentInstruction != lastInstruction && state.currentInstruction.isNotEmpty()) {
             lastInstruction = state.currentInstruction
             speak(state.currentInstruction)
         }
     }
 
     private fun recalculateRoute(origin: GeoPoint, destination: GeoPoint) {
-        viewModelScope.launch { fetchRoute(origin, destination) }
+        viewModelScope.launch { fetchRoute(origin, destination, currentWaypoints) }
     }
 
     fun onOverlayTap() {
@@ -407,7 +448,7 @@ class NavigationViewModel(
             try {
                 val geoPoint = placesRepository.getPlaceCoordinates(prediction.placeId)
                 if (geoPoint != null) {
-                    destinationProvider.setDestination(geoPoint)
+                    destinationProvider.setDestination(geoPoint, emptyList())
                     _systemState.value = NavSystemState.NAVIGATING
                 }
             } catch (e: Exception) {
@@ -419,7 +460,7 @@ class NavigationViewModel(
     fun updateDestination(lat: Double, lng: Double) {
         if (lat == 0.0 && lng == 0.0) stopNavigation()
         else {
-            destinationProvider.setDestination(GeoPoint(lat, lng))
+            destinationProvider.setDestination(GeoPoint(lat, lng), emptyList())
             _systemState.value = NavSystemState.NAVIGATING
         }
     }
@@ -432,7 +473,7 @@ class NavigationViewModel(
     fun performSearch() {
         val query = _searchQuery.value
         if (query.length < 3) return
-        viewModelScope.launch { findAndConfirmDestination(query) }
+        viewModelScope.launch { findAndConfirmDestination(query, null) }
     }
 
     // --- Confirmation Helpers ---

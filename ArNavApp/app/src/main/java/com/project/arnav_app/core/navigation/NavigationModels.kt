@@ -6,6 +6,7 @@ import kotlinx.serialization.Serializable
 data class IntentResult(
     val intent: String,
     val destination: String? = null,
+    val via: String? = null,
     val query: String? = null
 )
 

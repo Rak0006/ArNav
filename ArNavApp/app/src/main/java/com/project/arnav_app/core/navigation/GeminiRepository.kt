@@ -35,14 +35,21 @@ class GeminiRepository(private val apiKey: String) {
     private val TAG = "GeminiRepository"
 
     private fun fakeLLM(text: String): IntentResult {
+        val lower = text.lowercase()
         return when {
-            text.contains("go to", ignoreCase = true) -> {
-                val dest = text.substringAfter("go to", "").trim().removeSuffix(".")
+            lower.contains("go to") && lower.contains("via") -> {
+                val dest = text.substringAfter("go to").substringBefore("via").trim()
+                val via = text.substringAfter("via").trim().removeSuffix(".")
+                IntentResult("NAVIGATE_VIA", dest, via)
+            }
+            lower.contains("go to") -> {
+                val dest = text.substringAfter("go to").trim().removeSuffix(".")
                 IntentResult("NAVIGATE", if (dest.isNotEmpty()) dest else null)
             }
-            text.contains("yes", ignoreCase = true) -> IntentResult("CONFIRM")
-            text.contains("no", ignoreCase = true) -> IntentResult("CANCEL")
-            text.contains("how far", ignoreCase = true) || text.contains("time", ignoreCase = true) -> IntentResult("QUERY", text)
+            lower.contains("alternative") || lower.contains("another route") -> IntentResult("ALTERNATIVE_ROUTE")
+            lower.contains("yes") || lower.contains("haan") -> IntentResult("CONFIRM")
+            lower.contains("no") || lower.contains("nahi") -> IntentResult("CANCEL")
+            lower.contains("how far") || lower.contains("time") || lower.contains("eta") -> IntentResult("QUERY", text)
             else -> IntentResult("UNKNOWN")
         }
     }
@@ -59,12 +66,13 @@ class GeminiRepository(private val apiKey: String) {
         Return ONLY valid JSON.
 
         Intents:
-        NAVIGATE, CONFIRM, CANCEL, MODIFY, QUERY, UNKNOWN
+        NAVIGATE, NAVIGATE_VIA, CONFIRM, CANCEL, MODIFY, QUERY, ALTERNATIVE_ROUTE, UNKNOWN
 
         Schema:
         {
           "intent": "...",
           "destination": string | null,
+          "via": string | null,
           "query": string | null
         }
 
@@ -75,13 +83,16 @@ class GeminiRepository(private val apiKey: String) {
 
         Examples:
         "I want to go to Indiranagar"
-        → {"intent":"NAVIGATE","destination":"Indiranagar","query":null}
+        → {"intent":"NAVIGATE","destination":"Indiranagar","via":null,"query":null}
+
+        "I want to go to Jayanagar via Indiranagar"
+        → {"intent":"NAVIGATE_VIA","destination":"Jayanagar","via":"Indiranagar","query":null}
+
+        "show another route"
+        → {"intent":"ALTERNATIVE_ROUTE","destination":null,"via":null,"query":null}
 
         "yes"
-        → {"intent":"CONFIRM","destination":null,"query":null}
-
-        "how much time left"
-        → {"intent":"QUERY","destination":null,"query":"eta"}
+        → {"intent":"CONFIRM","destination":null,"via":null,"query":null}
 
         Input: "$text"
         """.trimIndent()
