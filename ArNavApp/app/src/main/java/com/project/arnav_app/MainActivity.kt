@@ -152,8 +152,12 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     }
 
                     initializeSpeechRecognizer(viewModel)
-                    perceptionEngine?.let { viewModel.observeObstacleRisk(it.riskEvents) }
+                    perceptionEngine?.let { engine -> 
+                        viewModel.observeObstacleRisk(engine.riskEvents, engine.detections) 
+                    }
                 }
+
+                val detections by viewModel.detections.collectAsState()
 
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
@@ -162,6 +166,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     NavigationScreen(
                         state = uiState,
                         obstacleRisk = obstacleRisk,
+                        detections = detections,
                         searchQuery = searchQuery,
                         suggestions = suggestions,
                         speechText = speechText,

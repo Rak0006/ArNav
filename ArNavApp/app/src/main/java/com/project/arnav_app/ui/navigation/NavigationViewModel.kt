@@ -7,6 +7,7 @@ import com.project.arnav_app.core.haptics.HapticFeedbackManager
 import com.project.arnav_app.core.location.LocationProvider
 import com.project.arnav_app.core.navigation.*
 import com.project.arnav_app.core.perception.ObstacleRisk
+import com.project.arnav_app.core.perception.Detection
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import com.google.android.libraries.places.api.model.AutocompletePrediction
@@ -53,7 +54,7 @@ class NavigationViewModel(
     private var _obstacleRisk = MutableStateFlow(ObstacleRisk.LOW)
     val obstacleRisk = _obstacleRisk.asStateFlow()
 
-    private val _detections = MutableStateFlow<List<com.project.arnav_app.core.perception.Detection>>(emptyList())
+    private val _detections = MutableStateFlow<List<Detection>>(emptyList())
     val detections = _detections.asStateFlow()
 
     private var routeSummaryCache: String? = null
@@ -83,7 +84,7 @@ class NavigationViewModel(
         observeDestinationChanges()
     }
 
-    fun observeObstacleRisk(riskFlow: SharedFlow<ObstacleRisk>) {
+    fun observeObstacleRisk(riskFlow: SharedFlow<ObstacleRisk>, detectionsFlow: StateFlow<List<Detection>>) {
         viewModelScope.launch {
             riskFlow.collect { risk ->
                 _obstacleRisk.value = risk
@@ -92,6 +93,11 @@ class NavigationViewModel(
                     ObstacleRisk.MEDIUM -> hapticFeedbackManager.playObstacleMedium()
                     ObstacleRisk.LOW -> {} 
                 }
+            }
+        }
+        viewModelScope.launch {
+            detectionsFlow.collect { detections ->
+                _detections.value = detections
             }
         }
     }

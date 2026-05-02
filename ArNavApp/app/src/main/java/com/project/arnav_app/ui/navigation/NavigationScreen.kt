@@ -2,12 +2,15 @@ package com.project.arnav_app.ui.navigation
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -20,12 +23,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.foundation.border
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.camera.view.PreviewView
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
@@ -33,16 +36,15 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.camera.view.PreviewView
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.libraries.places.api.model.AutocompletePrediction
 import com.project.arnav_app.core.navigation.NavSystemState
 import com.project.arnav_app.core.navigation.NavigationState
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import com.project.arnav_app.core.perception.Detection
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.shape.CircleShape
+import com.project.arnav_app.core.perception.ObstacleRisk
+import com.project.arnav_app.ui.map.MapView
 
 @Composable
 fun NavigationScreen(
@@ -73,7 +75,7 @@ fun NavigationScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(0.66f)
+                    .weight(0.58f)
             ) {
                 val location = state.currentLocation
                 if (location != null && location.latitude != 0.0) {
@@ -90,7 +92,7 @@ fun NavigationScreen(
                         isNavigating = state.isNavigating,
                         destination = destinationLatLng,
                         routePoints = routeLatLngPoints,
-                        onMapLongClick = { latLng ->
+                        onMapLongClick = { latLng: LatLng ->
                             onStartNavigation(latLng.latitude, latLng.longitude)
                         }
                     )
@@ -214,7 +216,7 @@ fun NavigationScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(0.22f)
+                    .weight(0.30f)
                     .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
                     .background(
                         Brush.verticalGradient(
@@ -340,7 +342,7 @@ fun OverlayContent(state: NavigationState, partialText: String, isTestMode: Bool
                     ) {
                         Text(
                             text = state.currentInstruction.ifEmpty { "Follow the path" },
-                            style = MaterialTheme.typography.headlineMedium,
+                            style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.ExtraBold,
                             color = Color(0xFF00C853),
                             textAlign = TextAlign.Center
@@ -348,7 +350,7 @@ fun OverlayContent(state: NavigationState, partialText: String, isTestMode: Bool
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
                             text = "Next step in ${state.distanceToNextStep.toInt()}m",
-                            style = MaterialTheme.typography.titleLarge,
+                            style = MaterialTheme.typography.bodyLarge,
                             color = Color.White.copy(alpha = 0.7f)
                         )
                     }
@@ -401,9 +403,10 @@ fun ControlPanel(state: NavigationState, onStartNavigation: (Double, Double) -> 
                 if (state.isNavigating) onStartNavigation(0.0, 0.0)
                 else state.destination?.let { onStartNavigation(it.latitude, it.longitude) }
             },
-            modifier = Modifier.height(48.dp).width(160.dp),
+            modifier = Modifier.height(48.dp).width(100.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = if (state.isNavigating) Color(0xFFB00020) else Color(0xFF00C853)
+                containerColor = if (state.isNavigating) Color(0xFFB00020) else Color(0xFF00C853),
+                contentColor= Color.White,
             ),
             shape = RoundedCornerShape(12.dp),
             enabled = state.destination != null || state.isNavigating
